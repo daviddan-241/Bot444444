@@ -13,7 +13,10 @@ export const LOCAL_SITE_ROOT = process.env.NEZORA_LOCAL_SITE_ROOT || '/tmp/nezor
 function run(command: string, args: readonly string[], cwd: string, timeoutMs = 1000 * 60 * 10): Promise<LocalCommandResult> {
   return new Promise((resolve) => {
     execFile(command, args, { cwd, timeout: timeoutMs, maxBuffer: 1024 * 1024 * 8, env: { ...process.env, CI: 'true' } }, (error, stdout, stderr) => {
-      resolve({ command: [command, ...args].join(' '), code: typeof (error as any)?.code === 'number' ? (error as any).code : 0, stdout, stderr });
+      const rawCode = (error as any)?.code;
+      const code = typeof rawCode === 'number' ? rawCode : error ? 127 : 0;
+      const finalStderr = stderr || (error ? String((error as Error).message) : '');
+      resolve({ command: [command, ...args].join(' '), code, stdout, stderr: finalStderr });
     });
   });
 }

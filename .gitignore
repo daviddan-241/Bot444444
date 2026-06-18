@@ -15,3 +15,5 @@ tsconfig.tsbuildinfo
 .config
 
 .npm
+
+uploads

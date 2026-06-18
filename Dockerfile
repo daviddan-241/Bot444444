@@ -5,6 +5,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates curl unzip procps iproute2 dnsutils \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
+RUN corepack enable || true
 RUN npm ci
 
 FROM node:20-bookworm-slim AS builder
@@ -23,8 +24,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates curl unzip procps iproute2 dnsutils \
-  && rm -rf /var/lib/apt/lists/* \
-  && useradd --create-home --shell /bin/bash nezora
+  && rm -rf /var/lib/apt/lists/*
+RUN corepack enable || true
+RUN useradd --create-home --shell /bin/bash nezora
 COPY --from=builder /app ./
 RUN chown -R nezora:nezora /app
 USER nezora

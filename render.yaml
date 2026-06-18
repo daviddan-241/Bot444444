@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: nezora-deploy
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: ALLOW_SHELL
+        value: "false"
+      - key: NEZORA_BASE_DOMAIN
+        sync: false

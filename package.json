@@ -1,0 +1,30 @@
+{
+  "name": "nezora-deploy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nezora Deploy - mobile-first multi-cloud deployment platform prototype",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "doctor": "node scripts/nezora-doctor.mjs"
+  },
+  "dependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "adm-zip": "^0.5.17",
+    "autoprefixer": "^10.4.19",
+    "lucide-react": "^0.468.0",
+    "next": "^14.2.4",
+    "postcss": "^8.4.39",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.5.3",
+    "zod": "^3.23.8"
+  }
+}

@@ -92,9 +92,9 @@ export async function deployStaticToGitHubPages(input: GitHubPagesDeployInput): 
       const [cmd, ...args] = installCommand.split(' ');
       r = await run(cmd, args, source);
       commands.push(r);
-      if (r.code !== 0 && installCommand === 'npm ci') {
+      if (r.code !== 0) {
         r = await run('npm', ['install'], source);
-        commands.push({ ...r, command: 'npm install # fallback after npm ci failed' });
+        commands.push({ ...r, command: 'npm install # fallback installer' });
       }
       if (r.code !== 0) throw new Error('Install failed. See command logs.');
     }
@@ -199,7 +199,7 @@ export async function deployStaticDirectoryToGitHubPages(input: GitHubPagesDeplo
     if (installCommand !== 'n/a') {
       const [cmd, ...args] = installCommand.split(' ');
       r = await run(cmd, args, source); commands.push(r);
-      if (r.code !== 0 && installCommand === 'npm ci') { r = await run('npm', ['install'], source); commands.push({ ...r, command: 'npm install # fallback after npm ci failed' }); }
+      if (r.code !== 0) { r = await run('npm', ['install'], source); commands.push({ ...r, command: 'npm install # fallback installer' }); }
       if (r.code !== 0) throw new Error('Install failed. See command logs.');
     }
     if (buildCommand !== 'n/a') {

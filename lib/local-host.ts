@@ -60,7 +60,7 @@ export async function buildAndHostStaticDirectory(sourceDir: string, projectName
     if (rec.installCommand !== 'n/a') {
       const [cmd, ...args] = rec.installCommand.split(' ');
       let r = await run(cmd, args, sourceDir); commands.push(r);
-      if (r.code !== 0 && rec.installCommand === 'npm ci') { r = await run('npm', ['install'], sourceDir); commands.push({ ...r, command: 'npm install # fallback after npm ci failed' }); }
+      if (r.code !== 0) { r = await run('npm', ['install'], sourceDir); commands.push({ ...r, command: 'npm install # fallback installer' }); }
       if (r.code !== 0) throw new Error('Install failed. See command logs.');
     }
     if (rec.buildCommand !== 'n/a') {

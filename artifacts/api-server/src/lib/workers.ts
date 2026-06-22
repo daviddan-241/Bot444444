@@ -27,6 +27,7 @@ class WorkerPool {
   private workers = new Map<string, Worker>();
   private healthData: Record<string, { ok: boolean; latency?: number; checkedAt: Date }> = {};
   private metrics: Array<{ ts: number; cpu: number; ram: number }> = [];
+  private started = false;
 
   register(id: string, name: string, type: string, intervalMs: number, fn: () => Promise<void>) {
     if (this.workers.has(id)) return;
@@ -36,6 +37,8 @@ class WorkerPool {
   }
 
   startAll() {
+    if (this.started) return;
+    this.started = true;
     for (const [, w] of this.workers) this._schedule(w);
   }
 
@@ -66,7 +69,16 @@ class WorkerPool {
   getMetrics(last = 60) { return this.metrics.slice(-last); }
 
   async init() {
-    // ── Health checker: ping every deployed app (process or container) every 30s ──
+    // ── Keep-Alive Pinger: prevents Replit from sleeping ──────────────────────
+    this.register("keep-alive", "Keep-Alive Pinger", "system", 4 * 60 * 1000, async () => {
+      const domain = process.env.REPLIT_DOMAINS;
+      if (!domain) return;
+      const url = `https://${domain}/api/ping`;
+      const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error(`Ping failed: ${r.status}`);
+    });
+
+    // ── Health checker: ping every deployed app every 30s ─────────────────────
     this.register("health-checker", "Health Checker", "monitor", 30_000, async () => {
       const procs = processManager.list().filter(p => p.status === "running" && p.port > 0);
       for (const p of procs) {
@@ -82,7 +94,6 @@ class WorkerPool {
           }
         }
       }
-      // Docker containers
       if (dockerManager.available) {
         const containers = dockerManager.list().filter(c => c.status === "running");
         for (const c of containers) {
@@ -117,10 +128,7 @@ class WorkerPool {
       let ram = 0;
       try {
         const mem = await readFile("/proc/meminfo", "utf8");
-        const get = (key: string) => {
-          const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`));
-          return m ? parseInt(m[1]) : 0;
-        };
+        const get = (key: string) => { const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`)); return m ? parseInt(m[1]) : 0; };
         const total = get("MemTotal"); const avail = get("MemAvailable");
         ram = total > 0 ? Math.round(100 * (1 - avail / total)) : 0;
       } catch { ram = 0; }
@@ -134,7 +142,7 @@ class WorkerPool {
       for (const p of processManager.list()) {
         if (p.status === "crashed" && p.restarts >= 5) {
           processManager.updateStatus(p.id, "stopped");
-          processManager.appendLog(p.id, "[CRASH-GUARD] Too many restarts — stopped. Check logs and use Auto-Repair.");
+          processManager.appendLog(p.id, "[CRASH-GUARD] Too many restarts — stopped. Check logs and redeploy.");
           workerBus.emit("crash-guard-stopped", { id: p.id, name: p.name });
         }
       }
@@ -164,7 +172,7 @@ class WorkerPool {
           setTimeout(() => { s.destroy(); resolve(false); }, 2000);
         });
         if (!open && p.status === "running") {
-          processManager.appendLog(p.id, `[PORT-SCAN] Port ${p.port} not responding — triggering restart`);
+          processManager.appendLog(p.id, `[PORT-SCAN] Port ${p.port} not responding — restarting`);
           await processManager.restart(p.id);
         }
       }
@@ -175,10 +183,7 @@ class WorkerPool {
       const { readFile } = await import("fs/promises");
       try {
         const mem = await readFile("/proc/meminfo", "utf8");
-        const get = (key: string) => {
-          const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`));
-          return m ? parseInt(m[1]) : 0;
-        };
+        const get = (key: string) => { const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`)); return m ? parseInt(m[1]) : 0; };
         const total = get("MemTotal"); const avail = get("MemAvailable");
         const pct = total > 0 ? Math.round(100 * (1 - avail / total)) : 0;
         if (pct > 90) workerBus.emit("memory-warning", { pct, ts: Date.now() });
@@ -193,9 +198,9 @@ class WorkerPool {
       workerBus.emit("docker-gc", { containers: r1, images: r2, ts: Date.now() });
     });
 
-    // ── Log Trimmer: periodic trim (process-manager self-caps) ────────────────
+    // ── Log Trimmer ───────────────────────────────────────────────────────────
     this.register("log-trimmer", "Log Trimmer", "maintenance", 5 * 60_000, async () => {
-      // processManager caps at MAX_LOG_LINES internally; nothing to do
+      // processManager caps at MAX_LOG_LINES internally; nothing extra to do
     });
 
     // ── Audit Logger ──────────────────────────────────────────────────────────

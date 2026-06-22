@@ -49,8 +49,8 @@ export default function AIScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     try {
-      const data = await post("/ai/chat", { message: content });
-      const reply: Message = { id: (Date.now() + 1).toString(), role: "assistant", content: data?.response ?? data?.message ?? "Sorry, I couldn't process that.", ts: Date.now() };
+      const data = await post("/ai/chat", { message: content, history: messages.slice(-8).map(m => ({ role: m.role, content: m.content })) });
+      const reply: Message = { id: (Date.now() + 1).toString(), role: "assistant", content: data?.reply ?? data?.response ?? data?.message ?? "Sorry, I couldn't process that.", ts: Date.now() };
       setMessages(prev => [...prev, reply]);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
@@ -96,7 +96,7 @@ export default function AIScreen() {
           </LinearGradient>
           <View>
             <Text style={{ fontSize: 20, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>AI Assistant</Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Groq / HuggingFace</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Ollama · Free AI</Text>
           </View>
         </View>
         {messages.length > 0 && (

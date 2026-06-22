@@ -1,0 +1,17 @@
+**/.git
+**/.gitignore
+**/node_modules
+**/.env
+**/.env.*
+**/dist
+**/.nezora-data
+**/.nezora-apps
+**/.nezora-uploads
+**/coverage
+**/.local
+**/screenshots
+**/.migration-backup
+artifacts/nezora-mobile
+artifacts/mockup-sandbox
+*.log
+*.md

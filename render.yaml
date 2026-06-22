@@ -1,0 +1,41 @@
+# Render Blueprint — deploy Nezora with one click
+# https://render.com/docs/blueprint-spec
+#
+# Click "New Blueprint" in Render dashboard and point to this repo.
+# Or: render blueprint launch
+
+services:
+  - type: web
+    name: nezora
+    runtime: docker
+    # Uses the root Dockerfile which builds web + API into one container
+    dockerfilePath: ./Dockerfile
+    plan: free
+    # Render sets PORT automatically; our app reads process.env.PORT
+    healthCheckPath: /api/ping
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # ── Auth — Render generates a secure random value ─────────────────────
+      - key: NEZORA_ADMIN_TOKEN
+        generateValue: true
+      - key: NEZORA_ADMIN_PASSWORD
+        generateValue: true
+      - key: NEZORA_ADMIN_USERNAME
+        value: admin
+
+      # ── Free AI fallback (optional but recommended) ───────────────────────
+      # Sign up free at https://console.groq.com → API Keys
+      - key: GROQ_API_KEY
+        sync: false   # you paste this in Render dashboard — never committed
+
+      # ── Ollama (optional — only if you run Ollama separately) ─────────────
+      # - key: OLLAMA_HOST
+      #   value: https://your-ollama-server.example.com
+      # - key: OLLAMA_MODEL
+      #   value: llama3.2
+
+      # ── Auto-detected from Render env — no config needed ──────────────────
+      # RENDER_EXTERNAL_URL is set by Render → our keep-alive pinger reads it
+      # PUBLIC_URL is also auto-detected from request headers

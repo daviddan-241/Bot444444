@@ -2,38 +2,28 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-const rawPort = process.env.PORT;
+// Replit-only plugins — skipped entirely in Docker / CI builds
+const isReplit = !!process.env.REPL_ID;
+const isDev = process.env.NODE_ENV !== "production";
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
+// PORT and BASE_PATH are required in dev (Replit), optional in Docker build
+const rawPort = process.env.PORT ?? "3000";
 const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
-}
+const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
+    // Replit dev overlays — only load when running inside Replit dev environment
+    ...(isReplit && isDev
+      ? [
+          (await import("@replit/vite-plugin-runtime-error-modal")).default(),
+        ]
+      : []),
+    ...(isReplit && isDev
       ? [
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer({

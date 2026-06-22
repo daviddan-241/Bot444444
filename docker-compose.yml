@@ -1,11 +1,13 @@
 version: "3.9"
 
 # Nezora — self-hosted Cloud OS
-# Run: docker compose up -d
-# First run: docker compose exec ollama ollama pull llama3.2
+# Quick start:
+#   docker compose up -d
+#   docker compose exec ollama ollama pull llama3.2
+# Then open: http://localhost:3000
 
 services:
-  # ── Ollama — free local AI (no API key needed) ─────────────────────────────
+  # ── Ollama — free local AI, no API key needed ─────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: nezora-ollama
@@ -14,7 +16,7 @@ services:
     ports:
       - "11434:11434"
     restart: unless-stopped
-    # Uncomment to use GPU:
+    # GPU support — uncomment if you have an Nvidia GPU:
     # deploy:
     #   resources:
     #     reservations:
@@ -29,63 +31,48 @@ services:
       retries: 5
       start_period: 30s
 
-  # ── API Server ──────────────────────────────────────────────────────────────
-  api:
+  # ── Nezora (web dashboard + API in one container) ────────────────────────
+  # Single image: Express serves both the Vite dashboard and /api routes.
+  # Works identically on Render, Railway, Fly.io, any VPS.
+  nezora:
     build:
       context: .
-      dockerfile: artifacts/api-server/Dockerfile
-    container_name: nezora-api
+      dockerfile: Dockerfile
+    container_name: nezora
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${PORT:-3000}:10000"
     environment:
-      PORT: 8080
+      PORT: 10000
       NODE_ENV: production
+      # AI — Ollama is the default (free, local). Groq is cloud fallback.
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
-      NEZORA_ADMIN_TOKEN: ${NEZORA_ADMIN_TOKEN:-changeme-set-this-in-env}
+      # Auth — change these before exposing to the internet!
+      NEZORA_ADMIN_TOKEN: ${NEZORA_ADMIN_TOKEN:-changeme-please-set-this}
       NEZORA_ADMIN_USERNAME: ${NEZORA_ADMIN_USERNAME:-admin}
-      NEZORA_ADMIN_PASSWORD: ${NEZORA_ADMIN_PASSWORD:-changeme-set-this-in-env}
+      NEZORA_ADMIN_PASSWORD: ${NEZORA_ADMIN_PASSWORD:-changeme-please-set-this}
+      # Domain — leave blank for auto-detection
       PUBLIC_URL: ${PUBLIC_URL:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
-    volumes:
-      - api_data:/app/.nezora-data
-      - api_apps:/app/.nezora-apps
-      - api_uploads:/app/.nezora-uploads
-      # Mount Docker socket if you want the API to manage containers:
+      # Mount Docker socket to let Nezora manage containers (optional):
       # - /var/run/docker.sock:/var/run/docker.sock
+    volumes:
+      - nezora_data:/app/.nezora-data
+      - nezora_apps:/app/.nezora-apps
+      - nezora_uploads:/app/.nezora-uploads
     depends_on:
       ollama:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/ping"]
+      test: ["CMD", "curl", "-f", "http://localhost:10000/api/ping"]
       interval: 20s
       timeout: 5s
       retries: 3
 
-  # ── Web dashboard ───────────────────────────────────────────────────────────
-  web:
-    build:
-      context: .
-      dockerfile: artifacts/nezora/Dockerfile
-      args:
-        # Pass your API URL — defaults to same-host /api proxy via nginx
-        VITE_API_BASE: ${VITE_API_BASE:-}
-    container_name: nezora-web
-    ports:
-      - "${WEB_PORT:-3000}:80"
-    depends_on:
-      - api
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
 volumes:
-  ollama_models:
-  api_data:
-  api_apps:
-  api_uploads:
+  ollama_models:   # Ollama model weights — survives container restarts
+  nezora_data:     # App catalog, config, project metadata
+  nezora_apps:     # Deployed app files
+  nezora_uploads:  # Upload temp storage

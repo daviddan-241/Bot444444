@@ -74,6 +74,25 @@ app.use(appProxyRouter);
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use("/api", router);
 
+// ── Serve built web dashboard in production (single-container mode) ───────────
+// When NODE_ENV=production the Express server also serves the Vite-built
+// web dashboard from ./public — enabling a single Docker container on Render.
+if (process.env.NODE_ENV === "production") {
+  const webDir = path.join(process.cwd(), "public");
+  app.use(express.static(webDir, { maxAge: "1d", index: false }));
+  // SPA fallback — anything not caught by /api, /s, /app routes → index.html
+  app.use((req, res, next) => {
+    if (
+      req.path.startsWith("/api/") ||
+      req.path.startsWith("/s/") ||
+      req.path.startsWith("/app/")
+    ) { next(); return; }
+    res.sendFile(path.join(webDir, "index.html"), (err) => {
+      if (err) next();
+    });
+  });
+}
+
 // ── Boot workers + Docker manager ────────────────────────────────────────────
 (async () => {
   // Init Docker manager (detects if Docker is available)

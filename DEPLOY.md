@@ -1,65 +1,105 @@
-# Nezora — Deploy Anywhere
+# Nezora — Deploy Guide
 
-## Docker (Render, Railway, Fly.io, any VPS)
+## Option 1: Render (free, easiest)
 
-### Quick start (CPU)
+### One-click via Render Blueprint
+1. Fork or push this repo to your GitHub
+2. Go to [render.com](https://render.com) → New → Blueprint
+3. Point to your repo — Render reads `render.yaml` automatically
+4. Click **Apply** — it deploys in ~5 minutes
+5. *(Optional)* Add a free Groq API key for better AI:
+   - Sign up at [console.groq.com](https://console.groq.com) → API Keys
+   - In Render dashboard → your service → Environment → add `GROQ_API_KEY`
+
+Your app will be live at `https://nezora-XXXX.onrender.com`
+
+**Free tier notes:**
+- Service sleeps after 15 min of inactivity — the built-in keep-alive pinger
+  wakes it automatically (reads `RENDER_EXTERNAL_URL`, no config needed)
+- 512 MB RAM — fits the API + web dashboard easily
+- Ollama (local AI) requires 4 GB RAM — use Groq free tier instead
+
+### Manual Render deploy
 ```bash
-git clone https://github.com/daviddan-241/Bot444444.git nezora
-cd nezora
-cp .env.example .env   # edit NEZORA_ADMIN_TOKEN and NEZORA_ADMIN_PASSWORD
-docker compose up -d
-# Pull the AI model (once — ~2 GB download)
-docker compose exec ollama ollama pull llama3.2
+# In Render dashboard → New Web Service → Docker
+# Repo: your GitHub repo
+# Dockerfile path: ./Dockerfile
+# Health check: /api/ping
 ```
-
-Open: http://localhost:3000
-
-### Environment variables (`.env`)
-| Variable | Default | Description |
-|---|---|---|
-| `NEZORA_ADMIN_TOKEN` | `changeme` | API auth token — **change this** |
-| `NEZORA_ADMIN_PASSWORD` | `changeme` | Dashboard password — **change this** |
-| `OLLAMA_MODEL` | `llama3.2` | Ollama model (llama3.2, llama3.2:1b, mistral) |
-| `GROQ_API_KEY` | — | Optional: Groq API key for cloud fallback |
-| `PUBLIC_URL` | auto-detected | Your public domain (e.g. https://nezora.example.com) |
-| `WEB_PORT` | `3000` | Web dashboard port |
-| `API_PORT` | `8080` | API server port |
-
-### GPU acceleration (Nvidia)
-Uncomment the `deploy.resources` block in `docker-compose.yml` and install the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
 
 ---
 
-## Render
-1. Create a new **Web Service** → connect your GitHub repo
-2. Set **Build Command**: `docker compose build api`
-3. Set **Start Command**: `docker compose up api ollama`
-4. Add env vars in the Render dashboard
+## Option 2: Docker anywhere (VPS, Hetzner, DigitalOcean)
 
-## Railway
+Best option if you want Ollama (free local AI, unlimited).
+
+```bash
+git clone https://github.com/daviddan-241/Bot444444.git nezora
+cd nezora
+cp .env.example .env
+# Edit .env — set NEZORA_ADMIN_TOKEN and NEZORA_ADMIN_PASSWORD
+nano .env
+
+# Start everything (api + web + ollama)
+docker compose up -d
+
+# Pull the AI model (once — ~2 GB)
+docker compose exec ollama ollama pull llama3.2
+
+# Open: http://your-server-ip:3000
+```
+
+Recommended VPS: **Hetzner CX22** (~€4/month, 4 GB RAM, runs Ollama + everything).
+
+---
+
+## Option 3: Railway
+
 ```bash
 railway login
-railway new
-railway up
+railway new --name nezora
+railway up --dockerfile Dockerfile
 ```
-Set `OLLAMA_HOST` to your Ollama service URL if running separately.
 
-## Fly.io
+Add env vars in Railway dashboard same as Render.
+
+---
+
+## Option 4: Fly.io
+
 ```bash
-flyctl launch --dockerfile artifacts/api-server/Dockerfile
-flyctl deploy
+fly launch --dockerfile Dockerfile --name nezora
+fly deploy
 ```
 
-## iOS (TestFlight / App Store)
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `NEZORA_ADMIN_TOKEN` | Yes | API auth token — auto-generated on Render |
+| `NEZORA_ADMIN_PASSWORD` | Yes | Dashboard password — auto-generated on Render |
+| `NEZORA_ADMIN_USERNAME` | No | Dashboard username (default: admin) |
+| `GROQ_API_KEY` | No | Free AI key from console.groq.com |
+| `OLLAMA_HOST` | No | Ollama URL (Docker compose sets this automatically) |
+| `OLLAMA_MODEL` | No | Model name (default: llama3.2) |
+| `PUBLIC_URL` | No | Auto-detected from Render/Railway/Fly env vars |
+
+---
+
+## iOS Mobile App
+
+The Expo app connects to your deployed Nezora server.
+
+1. Install **Expo Go** on your iPhone (App Store — free)
+2. Open the app → Settings tab
+3. Enter your server URL: `https://nezora-XXXX.onrender.com`
+4. Enter your admin token (from Render dashboard → Environment → `NEZORA_ADMIN_TOKEN`)
+
+For a real iOS app on TestFlight (no Expo Go needed):
 ```bash
 cd artifacts/nezora-mobile
 npx eas build --platform ios --profile preview
 ```
-Requires an Apple Developer account ($99/year) and EAS account (free tier available).
-
-For local iOS Simulator testing:
-```bash
-pnpm --filter @workspace/nezora-mobile run dev
-# Scan the QR with Expo Go on your iPhone
-```
+Requires Apple Developer account ($99/year) and free EAS account.

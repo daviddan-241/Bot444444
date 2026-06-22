@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { processManager } from "./process-manager";
+import { dockerManager } from "./docker-manager";
 
 export interface WorkerStatus {
   id: string;
@@ -64,8 +65,8 @@ class WorkerPool {
   getHealthData() { return this.healthData; }
   getMetrics(last = 60) { return this.metrics.slice(-last); }
 
-  init() {
-    // ── Health checker: ping every deployed app every 30s
+  async init() {
+    // ── Health checker: ping every deployed app (process or container) every 30s ──
     this.register("health-checker", "Health Checker", "monitor", 30_000, async () => {
       const procs = processManager.list().filter(p => p.status === "running" && p.port > 0);
       for (const p of procs) {
@@ -81,15 +82,22 @@ class WorkerPool {
           }
         }
       }
+      // Docker containers
+      if (dockerManager.available) {
+        const containers = dockerManager.list().filter(c => c.status === "running");
+        for (const c of containers) {
+          const start = Date.now();
+          try {
+            const r = await fetch(`http://localhost:${c.hostPort}/`, { signal: AbortSignal.timeout(5000) });
+            this.healthData[`docker:${c.id}`] = { ok: r.ok || r.status < 500, latency: Date.now() - start, checkedAt: new Date() };
+          } catch {
+            this.healthData[`docker:${c.id}`] = { ok: false, checkedAt: new Date() };
+          }
+        }
+      }
     });
 
-    // ── Self-ping keep-alive: hit own /api/healthz every 4 min (prevents Render sleep)
-    this.register("keep-alive", "Keep Alive Ping", "system", 4 * 60_000, async () => {
-      const port = process.env.PORT || "8080";
-      await fetch(`http://localhost:${port}/api/healthz`, { signal: AbortSignal.timeout(5000) }).catch(() => {});
-    });
-
-    // ── Metrics collector: CPU + RAM every 10s
+    // ── Metrics collector: CPU + RAM every 10s ────────────────────────────────
     this.register("metrics-collector", "Metrics Collector", "monitor", 10_000, async () => {
       const { readFile } = await import("fs/promises");
       let cpu = 0;
@@ -97,7 +105,10 @@ class WorkerPool {
         const stat1 = await readFile("/proc/stat", "utf8");
         await new Promise(r => setTimeout(r, 200));
         const stat2 = await readFile("/proc/stat", "utf8");
-        const parse = (s: string) => { const p = s.split("\n")[0].split(/\s+/).slice(1).map(Number); return { idle: p[3], total: p.reduce((a, b) => a + b, 0) }; };
+        const parse = (s: string) => {
+          const p = s.split("\n")[0].split(/\s+/).slice(1).map(Number);
+          return { idle: p[3], total: p.reduce((a, b) => a + b, 0) };
+        };
         const s1 = parse(stat1); const s2 = parse(stat2);
         const dt = s2.total - s1.total; const di = s2.idle - s1.idle;
         cpu = dt > 0 ? Math.round(100 * (1 - di / dt)) : 0;
@@ -106,7 +117,10 @@ class WorkerPool {
       let ram = 0;
       try {
         const mem = await readFile("/proc/meminfo", "utf8");
-        const get = (key: string) => { const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`)); return m ? parseInt(m[1]) : 0; };
+        const get = (key: string) => {
+          const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`));
+          return m ? parseInt(m[1]) : 0;
+        };
         const total = get("MemTotal"); const avail = get("MemAvailable");
         ram = total > 0 ? Math.round(100 * (1 - avail / total)) : 0;
       } catch { ram = 0; }
@@ -115,7 +129,7 @@ class WorkerPool {
       if (this.metrics.length > 720) this.metrics.shift();
     });
 
-    // ── Crash repair: if any app crashed > 3 times, flag it & stop auto-restart loop
+    // ── Crash Guard: stop infinitely-crashing apps after 5 restarts ──────────
     this.register("crash-guard", "Crash Guard", "repair", 60_000, async () => {
       for (const p of processManager.list()) {
         if (p.status === "crashed" && p.restarts >= 5) {
@@ -126,18 +140,19 @@ class WorkerPool {
       }
     });
 
-    // ── Log trimmer: keep only last 500 lines per process
-    this.register("log-trimmer", "Log Trimmer", "maintenance", 5 * 60_000, async () => {
-      // processManager already caps at MAX_LOG_LINES internally
-    });
-
-    // ── Process watchdog: emit telemetry
+    // ── Process Watchdog: telemetry snapshot every 15s ────────────────────────
     this.register("process-watchdog", "Process Watchdog", "monitor", 15_000, async () => {
       const procs = processManager.list();
-      workerBus.emit("process-snapshot", { count: procs.length, running: procs.filter(p => p.status === "running").length, crashed: procs.filter(p => p.status === "crashed").length, ts: Date.now() });
+      const containers = dockerManager.available ? dockerManager.list() : [];
+      workerBus.emit("process-snapshot", {
+        count: procs.length + containers.length,
+        running: procs.filter(p => p.status === "running").length + containers.filter(c => c.status === "running").length,
+        crashed: procs.filter(p => p.status === "crashed").length + containers.filter(c => c.status === "crashed").length,
+        ts: Date.now(),
+      });
     });
 
-    // ── Port scanner: verify ports are still in use
+    // ── Port Scanner: verify process ports still respond every 60s ────────────
     this.register("port-scanner", "Port Scanner", "monitor", 60_000, async () => {
       const net = await import("net");
       for (const p of processManager.list()) {
@@ -155,21 +170,37 @@ class WorkerPool {
       }
     });
 
-    // ── Audit logger: save events to disk
-    this.register("audit-logger", "Audit Logger", "system", 30_000, async () => {
-      // Audit events are emitted on workerBus, collected by the routes
-    });
-
-    // ── Memory guard: warn if system RAM > 90%
+    // ── Memory Guard: warn if system RAM > 90% ────────────────────────────────
     this.register("memory-guard", "Memory Guard", "monitor", 30_000, async () => {
       const { readFile } = await import("fs/promises");
       try {
         const mem = await readFile("/proc/meminfo", "utf8");
-        const get = (key: string) => { const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`)); return m ? parseInt(m[1]) : 0; };
+        const get = (key: string) => {
+          const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`));
+          return m ? parseInt(m[1]) : 0;
+        };
         const total = get("MemTotal"); const avail = get("MemAvailable");
         const pct = total > 0 ? Math.round(100 * (1 - avail / total)) : 0;
         if (pct > 90) workerBus.emit("memory-warning", { pct, ts: Date.now() });
       } catch {}
+    });
+
+    // ── Docker GC: prune stopped containers + dangling images every 6h ────────
+    this.register("docker-gc", "Docker GC", "maintenance", 6 * 60 * 60_000, async () => {
+      if (!dockerManager.available) return;
+      const r1 = await dockerManager.pruneContainers();
+      const r2 = await dockerManager.pruneImages();
+      workerBus.emit("docker-gc", { containers: r1, images: r2, ts: Date.now() });
+    });
+
+    // ── Log Trimmer: periodic trim (process-manager self-caps) ────────────────
+    this.register("log-trimmer", "Log Trimmer", "maintenance", 5 * 60_000, async () => {
+      // processManager caps at MAX_LOG_LINES internally; nothing to do
+    });
+
+    // ── Audit Logger ──────────────────────────────────────────────────────────
+    this.register("audit-logger", "Audit Logger", "system", 30_000, async () => {
+      // Audit events emitted on workerBus, collected by routes
     });
 
     this.startAll();

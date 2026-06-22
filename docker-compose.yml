@@ -1,0 +1,91 @@
+version: "3.9"
+
+# ── Danny's Cloud OS — Self-Hosted Stack ─────────────────────────────────────
+# Run on ANY Linux server:  docker compose up -d
+# No Render. No free tier limits. No sleep.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloudos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cloudos
+      POSTGRES_USER: cloudos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API + Control Plane ─────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cloudos-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgresql://cloudos:${POSTGRES_PASSWORD:-changeme_in_production}@postgres:5432/cloudos
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change_this_token}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN:-}
+      NEZORA_DATA_DIR: /data/nezora
+      NEZORA_APPS_DIR: /apps
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-}
+    volumes:
+      - app_data:/data/nezora
+      - deployed_apps:/apps
+      - /var/run/docker.sock:/var/run/docker.sock   # Docker-in-Docker for app deployment
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Nginx Reverse Proxy ─────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: cloudos-nginx
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx_certs:/etc/nginx/certs
+      - nginx_webroot:/var/www/certbot
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  app_data:
+  deployed_apps:
+  nginx_certs:
+  nginx_webroot:
+
+networks:
+  default:
+    name: cloudos-net

@@ -1,0 +1,646 @@
+# DANNY*S CLOUD OS V2 — COMPLETE UPGRADE SPECIFICATION
+
+## Mission
+
+Transform the current project into a fully functional Cloud Operating System that feels like owning a personal Render + Railway + Vercel + Docker Desktop + Portainer platform.
+
+This is NOT a simple deployment dashboard.
+
+This is a complete cloud management platform.
+
+The platform itself handles deployments, builds, monitoring, automation, troubleshooting, domains, databases, storage, and project management.
+
+The hosting provider is only responsible for keeping Nexus Cloud OS online.
+
+All deployment intelligence, automation, orchestration, and management must happen inside Nexus Cloud OS.
+
+No mock data.
+
+No demo functionality.
+
+No placeholder services.
+
+No fake deployment states.
+
+No simulated workers.
+
+No simulated AI responses.
+
+All functionality must be connected to real systems and real workflows.
+
+---
+
+# PRIMARY USER EXPERIENCE
+
+The user should only need to:
+
+1. Log in.
+2. Add Git token (GitHub/GitLab/Bitbucket).
+3. Upload ZIP OR paste repository URL.
+4. Click Deploy.
+
+Everything else must be automated.
+
+The platform should:
+
+- Detect project type
+- Detect framework
+- Detect language
+- Detect dependencies
+- Generate build plan
+- Generate Dockerfile if missing
+- Create runtime
+- Build project
+- Deploy project
+- Create public URL
+- Enable SSL
+- Monitor health
+- Restart if failed
+- Analyze errors
+- Attempt self-repair
+- Redeploy automatically
+
+The goal is near-zero configuration.
+
+---
+
+# DESIGN SYSTEM
+
+Theme:
+
+- White
+- Clean
+- Enterprise
+- Apple Inspired
+- Modern SaaS
+
+Visual Style:
+
+- Glassmorphism
+- Soft shadows
+- Large rounded corners
+- Professional gradients
+- Premium feel
+
+The provided screenshot should be the inspiration.
+
+However the layout must be more structured and scalable.
+
+---
+
+# MOBILE FIRST
+
+Primary target:
+
+- iPhone
+- iOS
+
+Secondary:
+
+- Desktop
+
+Everything must be responsive.
+
+No desktop-first design.
+
+---
+
+# APP STRUCTURE
+
+Top Bar
+
+Contains:
+
+- Brand
+- Search
+- Notifications
+- User menu
+
+Example:
+
+DANNY’S CLOUD
+
+Search projects, deployments, logs...
+
+Bell Icon
+
+Profile Avatar
+
+---
+
+# SIDEBAR
+
+Use a collapsible sidebar.
+
+Do NOT use bottom navigation.
+
+Sidebar Sections:
+
+Dashboard
+
+Projects
+Deployments
+Containers
+Domains
+Databases
+Storage
+
+AI
+
+Assistant
+Agents
+Automation
+
+Infrastructure
+
+Workers
+Queues
+Monitoring
+Logs
+
+Marketplace
+
+Templates
+Plugins
+
+Settings
+
+Collapsed state shows icons only.
+
+Expanded state shows labels.
+
+---
+
+# DASHBOARD
+
+Display:
+
+Running Projects
+
+Active Deployments
+
+CPU Usage
+
+RAM Usage
+
+Storage Usage
+
+Bandwidth Usage
+
+System Health
+
+Realtime Metrics
+
+Recent Activity
+
+Deployment Feed
+
+All data must be live.
+
+No fake metrics.
+
+---
+
+# DEPLOY CENTER
+
+Central action of the platform.
+
+Large deploy button:
+
+- NEW DEPLOYMENT
+
+Supported Sources:
+
+Git Repository
+
+ZIP Upload
+
+Docker Image
+
+Public Repository URL
+
+Template Deployment
+
+Manual Source Upload
+
+---
+
+# AUTO DETECTION ENGINE
+
+Automatically detect:
+
+Node.js
+
+React
+
+Next.js
+
+Vue
+
+Angular
+
+Python
+
+Flask
+
+FastAPI
+
+Django
+
+PHP
+
+Laravel
+
+WordPress
+
+Go
+
+Rust
+
+Java
+
+Spring
+
+C++
+
+Static Sites
+
+Unknown Custom Apps
+
+Generate deployment strategy automatically.
+
+---
+
+# AI ASSISTANT
+
+Built into the platform.
+
+Capabilities:
+
+Analyze repository
+
+Analyze deployment failures
+
+Generate Dockerfile
+
+Generate runtime configuration
+
+Generate environment configuration
+
+Review logs
+
+Suggest optimizations
+
+Suggest fixes
+
+Explain failures
+
+Recommend scaling actions
+
+Must operate on real project data.
+
+No fake analysis.
+
+---
+
+# SELF HEALING SYSTEM
+
+When deployment fails:
+
+Capture logs
+
+Identify failure
+
+Classify failure
+
+Generate repair strategy
+
+Apply approved repair
+
+Retry build
+
+Retry deployment
+
+Record all actions
+
+Every step must be auditable.
+
+---
+
+# PROJECT MANAGEMENT
+
+Each project page includes:
+
+Overview
+
+Deployments
+
+Logs
+
+Domains
+
+Environment Variables
+
+Storage
+
+Monitoring
+
+Settings
+
+Actions:
+
+Deploy
+
+Redeploy
+
+Restart
+
+Rollback
+
+Clone
+
+Archive
+
+Delete
+
+---
+
+# CONTAINER MANAGEMENT
+
+Support:
+
+Docker Containers
+
+Container Groups
+
+Container Templates
+
+Health Checks
+
+Restart Policies
+
+Resource Limits
+
+Container Logs
+
+Container Metrics
+
+---
+
+# DATABASE MANAGEMENT
+
+Support:
+
+PostgreSQL
+
+MySQL
+
+MariaDB
+
+Redis
+
+SQLite
+
+Capabilities:
+
+Create
+
+Delete
+
+Backup
+
+Restore
+
+Monitor
+
+Connect
+
+---
+
+# STORAGE SYSTEM
+
+Persistent Volumes
+
+File Browser
+
+Uploads
+
+Downloads
+
+Snapshots
+
+Backups
+
+Restores
+
+Usage Analytics
+
+---
+
+# DOMAIN MANAGEMENT
+
+Custom Domains
+
+Automatic SSL
+
+SSL Renewal
+
+DNS Guidance
+
+Redirect Rules
+
+Subdomain Management
+
+Public URL Generation
+
+---
+
+# MONITORING
+
+Realtime Dashboard
+
+CPU
+
+RAM
+
+Network
+
+Storage
+
+Requests
+
+Response Times
+
+Error Rates
+
+Uptime
+
+Health Status
+
+---
+
+# LOGGING
+
+Realtime Log Streaming
+
+Search
+
+Filtering
+
+Export
+
+Historical Logs
+
+Deployment Logs
+
+Container Logs
+
+System Logs
+
+---
+
+# WORKER SYSTEM
+
+Real workers only.
+
+Examples:
+
+Build Worker
+
+Deploy Worker
+
+Monitoring Worker
+
+Backup Worker
+
+Security Worker
+
+Cleanup Worker
+
+Notification Worker
+
+Scaling Worker
+
+Workers start only when required.
+
+No fake worker counts.
+
+---
+
+# AUTOMATION SYSTEM
+
+Users can create:
+
+Deployment Automation
+
+Backup Automation
+
+Monitoring Automation
+
+Restart Automation
+
+Notification Automation
+
+Domain Automation
+
+Workflow Automation
+
+---
+
+# TEMPLATE MARKETPLACE
+
+One-click deployments.
+
+Examples:
+
+Discord Bot
+
+Telegram Bot
+
+WhatsApp Bot
+
+Node API
+
+FastAPI
+
+Laravel
+
+React
+
+Next.js
+
+WordPress
+
+Portfolio
+
+CRM
+
+SaaS Starter
+
+Ecommerce
+
+Blog
+
+---
+
+# SECURITY
+
+Secrets Management
+
+Encrypted Storage
+
+Role-Based Access
+
+Audit Logs
+
+Rate Limiting
+
+Access Controls
+
+Session Management
+
+Activity Tracking
+
+---
+
+# INFRASTRUCTURE VIEW
+
+Visual Infrastructure Map
+
+Load Balancers
+
+Containers
+
+Volumes
+
+Databases
+
+Workers
+
+Queues
+
+Connections
+
+Realtime status indicators.
+
+---
+
+# PERFORMANCE GOAL
+
+The UI should feel:
+
+Fast
+
+Premium
+
+Fluid
+
+Native iOS
+
+Professional
+
+Enterprise-grade
+
+The experience should feel like a real cloud platform, not a project dashboard.
+
+Users should feel like they own a complete cloud operating system.

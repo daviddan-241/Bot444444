@@ -5,7 +5,6 @@ import providersRouter from "./providers";
 import limitsRouter from "./limits";
 import deployRouter from "./deploy";
 import shellRouter from "./shell";
-import staticServeRouter from "./static-serve";
 import systemRouter from "./system";
 import projectsRouter from "./projects";
 import aiRouter from "./ai";
@@ -27,6 +26,5 @@ router.use(providersRouter);
 router.use(limitsRouter);
 router.use(deployRouter);
 router.use(shellRouter);
-router.use(staticServeRouter);
 
 export default router;

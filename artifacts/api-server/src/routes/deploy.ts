@@ -131,6 +131,7 @@ router.post("/real/github-pages", async (req, res) => {
     }
 
     const publish = path.join(work, "publish");
+    await mkdir(publish, { recursive: true });
     await run("git", ["init"], publish);
     await writeFile(path.join(publish, ".nojekyll"), "");
     await cp(path.join(source, cmds.output), publish, { recursive: true });

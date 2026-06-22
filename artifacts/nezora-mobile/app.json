@@ -14,9 +14,12 @@
       "backgroundColor": "#F2F2F7"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.dannycloud.nezora"
     },
-    "android": {},
+    "android": {
+      "package": "com.dannycloud.nezora"
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },

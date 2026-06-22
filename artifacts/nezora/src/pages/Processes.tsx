@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Shell } from '@/components/Shell';
-import { Activity, RotateCw, Square, Terminal, ExternalLink, RefreshCw, Zap, Clock, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import {
+  Activity, RotateCw, Square, Terminal, ExternalLink, Zap,
+  AlertTriangle, CheckCircle2, Loader2, Wifi, WifiOff, RefreshCw
+} from 'lucide-react';
 
 const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -9,17 +12,16 @@ interface ManagedProcess {
   restarts: number; startedAt?: string; url?: string;
   framework?: string; language?: string;
 }
-
 interface DeployJob {
   id: string; name: string; status: string;
   createdAt: number; startedAt?: number; finishedAt?: number;
   logs: string[]; result?: any; error?: string;
 }
-
 interface WorkerStatus {
   id: string; name: string; type: string; status: string;
-  runs: number; errors: number; lastError?: string; lastRun?: string;
+  runs: number; errors: number; lastError?: string; lastRun?: string; nextRun?: string;
 }
+interface QueueInfo { running: number; queued: number; max: number }
 
 const STATUS_COLOR: Record<string, string> = {
   running: '#34C759', starting: '#FF9F0A', restarting: '#FF9F0A',
@@ -37,7 +39,6 @@ function timeAgo(ms?: number | string) {
   if (d < 3600000) return `${Math.floor(d / 60000)}m ago`;
   return `${Math.floor(d / 3600000)}h ago`;
 }
-
 function duration(start?: number, end?: number) {
   if (!start) return '—';
   const d = (end || Date.now()) - start;
@@ -51,48 +52,95 @@ export default function Processes() {
   const [procs, setProcs] = useState<ManagedProcess[]>([]);
   const [jobs, setJobs] = useState<DeployJob[]>([]);
   const [workers, setWorkers] = useState<WorkerStatus[]>([]);
-  const [queueInfo, setQueueInfo] = useState<{ running: number; queued: number; max: number } | null>(null);
+  const [queueInfo, setQueueInfo] = useState<QueueInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expandedLogs, setExpandedLogs] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
   const logsRef = useRef<HTMLPreElement>(null);
+  const logEsRef = useRef<EventSource | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [pr, jr, wr] = await Promise.all([
-        fetch(`${base}/api/real/processes`, { credentials: 'include' }).then(r => r.json()),
-        fetch(`${base}/api/real/deploy-jobs`, { credentials: 'include' }).then(r => r.json()),
-        fetch(`${base}/api/real/workers`, { credentials: 'include' }).then(r => r.json()),
-      ]);
-      if (pr.ok) setProcs(pr.processes ?? []);
-      if (jr.ok) { setJobs(jr.jobs ?? []); setQueueInfo(jr.workers); }
-      if (wr.ok) setWorkers(wr.workers ?? []);
-    } catch {}
-    setLoading(false);
+  // ── Main SSE connection ────────────────────────────────────────────────────
+  useEffect(() => {
+    let es: EventSource;
+    let retryTimer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      es = new EventSource(`${base}/api/real/events/stream`, { withCredentials: true });
+
+      es.addEventListener('init', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        setProcs(d.processes ?? []);
+        setJobs(d.jobs ?? []);
+        setWorkers(d.workers ?? []);
+        setQueueInfo(d.queue ?? null);
+        setLoading(false);
+        setConnected(true);
+      });
+
+      es.addEventListener('process', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        setProcs(d.processes ?? []);
+        if (d.queue) setQueueInfo(d.queue);
+      });
+
+      es.addEventListener('log', (e: MessageEvent) => {
+        const { id, line } = JSON.parse(e.data);
+        // Only append to panel if this process's logs are expanded
+        setExpandedId(cur => {
+          if (cur === id) setLogLines(prev => [...prev.slice(-499), line]);
+          return cur;
+        });
+      });
+
+      es.addEventListener('state', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        if (d.jobs) setJobs(d.jobs);
+        if (d.workers) setWorkers(d.workers);
+        if (d.queue) setQueueInfo(d.queue);
+      });
+
+      es.onerror = () => {
+        setConnected(false);
+        es.close();
+        retryTimer = setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
+    return () => { es?.close(); clearTimeout(retryTimer); };
   }, [base]);
 
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
+  // ── Per-process log SSE ────────────────────────────────────────────────────
+  const openLogs = useCallback((id: string) => {
+    logEsRef.current?.close();
+    setLogLines([]);
+    setExpandedId(id);
 
-  const loadLogs = useCallback(async (id: string) => {
-    setLogsLoading(true);
-    try {
-      const r = await fetch(`${base}/api/real/processes/${id}/logs?tail=200`, { credentials: 'include' });
-      const data = await r.json();
-      if (data.ok) setLogs(data.logs ?? []);
-    } catch { setLogs(['Failed to load logs']); }
-    setLogsLoading(false);
-    setTimeout(() => logsRef.current?.scrollTo(0, logsRef.current.scrollHeight), 100);
+    const es = new EventSource(
+      `${base}/api/real/processes/${id}/logs/stream`,
+      { withCredentials: true }
+    );
+    es.onmessage = (e: MessageEvent) => {
+      const { line } = JSON.parse(e.data);
+      setLogLines(prev => [...prev.slice(-499), line]);
+      setTimeout(() => logsRef.current?.scrollTo(0, logsRef.current.scrollHeight), 30);
+    };
+    logEsRef.current = es;
   }, [base]);
 
-  const toggleLogs = (id: string) => {
-    if (expandedLogs === id) { setExpandedLogs(null); setLogs([]); }
-    else { setExpandedLogs(id); loadLogs(id); }
-  };
+  const closeLogs = useCallback(() => {
+    logEsRef.current?.close();
+    logEsRef.current = null;
+    setExpandedId(null);
+    setLogLines([]);
+  }, []);
 
+  useEffect(() => () => { logEsRef.current?.close(); }, []);
+
+  // ── Actions ────────────────────────────────────────────────────────────────
   const action = async (url: string, method = 'POST') => {
     await fetch(`${base}${url}`, { method, credentials: 'include' });
-    setTimeout(load, 600);
   };
 
   return (
@@ -100,15 +148,18 @@ export default function Processes() {
       <div className="animate-rise" style={{ maxWidth: 820, margin: '0 auto' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <div className="section-title">Live Apps & Workers</div>
-            <div className="section-subtitle">Running processes, deploy queue, and background workers</div>
+            <div className="section-subtitle">Real-time — no refresh needed</div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-secondary btn-sm" onClick={load} disabled={loading}>
-              <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
-            </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Connection indicator */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, background: connected ? '#34C75915' : '#FF3B3015', border: `1px solid ${connected ? '#34C75940' : '#FF3B3040'}` }}>
+              {connected
+                ? <><Wifi size={12} color="#34C759" /><span style={{ fontSize: 11, color: '#34C759', fontWeight: 600 }}>Live</span></>
+                : <><WifiOff size={12} color="#FF3B30" /><span style={{ fontSize: 11, color: '#FF3B30', fontWeight: 600 }}>Reconnecting…</span></>}
+            </div>
             <button className="btn btn-primary btn-sm" onClick={() => window.location.href = '/deploy'}>
               <Zap size={13} /> Deploy App
             </button>
@@ -132,9 +183,7 @@ export default function Processes() {
 
         {/* Live processes */}
         <div style={{ marginBottom: 28 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-            Live Processes
-          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Live Processes</div>
           {loading && <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}><Loader2 size={20} className="spin" style={{ margin: '0 auto' }} /></div>}
           {!loading && procs.length === 0 && (
             <div className="card" style={{ padding: 32, textAlign: 'center' }}>
@@ -145,51 +194,43 @@ export default function Processes() {
           {procs.map(proc => (
             <div key={proc.id} style={{ marginBottom: 8 }}>
               <div className="card card-inner" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 5, background: STATUS_COLOR[proc.status] ?? '#8E8E93', flexShrink: 0 }} />
+                <div style={{ width: 10, height: 10, borderRadius: 5, flexShrink: 0, background: STATUS_COLOR[proc.status] ?? '#8E8E93', boxShadow: proc.status === 'running' ? `0 0 6px ${STATUS_COLOR[proc.status]}80` : 'none' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{proc.name}</span>
                     <span style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--surface)', borderRadius: 4, padding: '1px 5px' }}>{proc.framework ?? proc.language ?? 'app'}</span>
-                    <span style={{ fontSize: 11, color: STATUS_COLOR[proc.status] ?? '#8E8E93', fontWeight: 600 }}>{proc.status}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_COLOR[proc.status] ?? '#8E8E93' }}>{proc.status}</span>
+                    {proc.restarts > 0 && <span style={{ fontSize: 11, color: '#FF9F0A' }}>↺ {proc.restarts} restart{proc.restarts > 1 ? 's' : ''}</span>}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                    port {proc.port} · restarts: {proc.restarts} · started {timeAgo(proc.startedAt)}
+                    :{proc.port} · started {timeAgo(proc.startedAt)}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   {proc.url && (
-                    <a href={proc.url} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">
-                      <ExternalLink size={13} />
-                    </a>
+                    <a href={proc.url} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm"><ExternalLink size={13} /></a>
                   )}
-                  <button className="btn btn-secondary btn-sm" title="View logs" onClick={() => toggleLogs(proc.id)}>
+                  <button className="btn btn-secondary btn-sm" title={expandedId === proc.id ? 'Close logs' : 'Stream logs'}
+                    style={{ background: expandedId === proc.id ? '#007AFF10' : undefined, color: expandedId === proc.id ? '#007AFF' : undefined }}
+                    onClick={() => expandedId === proc.id ? closeLogs() : openLogs(proc.id)}>
                     <Terminal size={13} />
                   </button>
-                  <button className="btn btn-secondary btn-sm" title="Restart" onClick={() => action(`/api/real/processes/${proc.id}/restart`)}>
-                    <RotateCw size={13} />
-                  </button>
-                  <button className="btn btn-secondary btn-sm" title="Stop" style={{ color: '#FF3B30' }} onClick={() => action(`/api/real/processes/${proc.id}`, 'DELETE')}>
-                    <Square size={13} />
-                  </button>
+                  <button className="btn btn-secondary btn-sm" title="Restart" onClick={() => action(`/api/real/processes/${proc.id}/restart`)}><RotateCw size={13} /></button>
+                  <button className="btn btn-secondary btn-sm" title="Stop" style={{ color: '#FF3B30' }} onClick={() => action(`/api/real/processes/${proc.id}`, 'DELETE')}><Square size={13} /></button>
                 </div>
               </div>
-              {expandedLogs === proc.id && (
-                <div style={{ background: '#0A0A0F', borderRadius: '0 0 10px 10px', padding: 12, marginTop: -4 }}>
-                  {logsLoading ? (
-                    <div style={{ color: '#888', fontSize: 12 }}>Loading logs…</div>
-                  ) : (
-                    <pre ref={logsRef} style={{ color: '#e5e5e5', fontSize: 11, maxHeight: 240, overflow: 'auto', margin: 0, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      {logs.length ? logs.join('\n') : 'No logs yet.'}
-                    </pre>
-                  )}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => loadLogs(proc.id)}>
-                      <RefreshCw size={11} /> Reload
-                    </button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => { setExpandedLogs(null); setLogs([]); }}>
-                      Close
-                    </button>
+
+              {/* Inline live log panel */}
+              {expandedId === proc.id && (
+                <div style={{ background: '#0A0A0F', borderRadius: '0 0 10px 10px', padding: '10px 12px', marginTop: -4, border: '1px solid #007AFF30', borderTop: 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: 3, background: '#34C759', animation: 'pulse 2s infinite' }} />
+                    <span style={{ fontSize: 11, color: '#34C759', fontWeight: 600 }}>Streaming live</span>
+                    <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto', fontSize: 11 }} onClick={closeLogs}>Close</button>
                   </div>
+                  <pre ref={logsRef} style={{ color: '#e5e5e5', fontSize: 11, maxHeight: 260, overflow: 'auto', margin: 0, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    {logLines.length ? logLines.join('\n') : 'Waiting for output…'}
+                  </pre>
                 </div>
               )}
             </div>
@@ -199,16 +240,14 @@ export default function Processes() {
         {/* Deploy jobs */}
         {jobs.length > 0 && (
           <div style={{ marginBottom: 28 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-              Deploy Queue
-            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Deploy Queue</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.slice(0, 10).map(job => (
                 <div key={job.id} className="card card-inner">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 10, height: 10, borderRadius: 5, background: JOB_COLOR[job.status] ?? '#8E8E93', flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{job.name}</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: JOB_COLOR[job.status] }}>{job.status}</span>
                         {job.result?.url && (
@@ -219,7 +258,7 @@ export default function Processes() {
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
                         {job.status === 'running' && job.startedAt ? `Running for ${duration(job.startedAt)}` : ''}
-                        {job.status === 'done' ? `Completed in ${duration(job.startedAt, job.finishedAt)}` : ''}
+                        {job.status === 'done' ? `Done in ${duration(job.startedAt, job.finishedAt)}` : ''}
                         {job.status === 'failed' ? `Failed: ${job.error}` : ''}
                         {job.status === 'queued' ? `Queued ${timeAgo(job.createdAt)}` : ''}
                       </div>
@@ -238,21 +277,20 @@ export default function Processes() {
 
         {/* Background workers */}
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-            Background Workers
-          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Background Workers</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
             {workers.map(w => (
               <div key={w.id} className="card card-inner" style={{ padding: '10px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  {w.status === 'running' ? <Loader2 size={12} className="spin" style={{ color: '#007AFF' }} /> :
-                    w.status === 'error' ? <AlertTriangle size={12} color="#FF3B30" /> :
-                    <CheckCircle2 size={12} color="#34C759" />}
+                  {w.status === 'running'
+                    ? <Loader2 size={12} className="spin" style={{ color: '#007AFF' }} />
+                    : w.status === 'error'
+                    ? <AlertTriangle size={12} color="#FF3B30" />
+                    : <CheckCircle2 size={12} color="#34C759" />}
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{w.name}</span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  {w.runs} runs · {w.errors} errors
-                  {w.lastRun ? ` · ${timeAgo(w.lastRun)}` : ''}
+                  {w.runs} runs · {w.errors} errors{w.lastRun ? ` · ${timeAgo(w.lastRun)}` : ''}
                 </div>
                 {w.lastError && <div style={{ fontSize: 11, color: '#FF3B30', marginTop: 4, wordBreak: 'break-word' }}>{w.lastError}</div>}
               </div>

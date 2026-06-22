@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import fileUpload from "express-fileupload";
 import cookieParser from "cookie-parser";
+import path from "path";
 import router from "./routes";
 import staticServeRouter from "./routes/static-serve";
 import appProxyRouter from "./routes/app-proxy";
@@ -13,13 +14,16 @@ import { mkdir } from "fs/promises";
 
 const app: Express = express();
 
-// ── Ensure data dirs ─────────────────────────────────────────────────────────
-const NEZORA_DATA_DIR = process.env.NEZORA_DATA_DIR ?? "/tmp/nezora-data";
-const NEZORA_APPS_DIR = process.env.NEZORA_APPS_DIR ?? "/tmp/nezora-apps";
+// ── Ensure data dirs (persistent, platform-agnostic) ─────────────────────────
+// Use CWD-relative dirs so data survives restarts on all platforms.
+// Override with env vars for Docker volumes, Render disks, Railway volumes, etc.
+const NEZORA_DATA_DIR = process.env.NEZORA_DATA_DIR ?? path.join(process.cwd(), ".nezora-data");
+const NEZORA_APPS_DIR = process.env.NEZORA_APPS_DIR ?? path.join(process.cwd(), ".nezora-apps");
+const UPLOAD_TMP_DIR = process.env.UPLOAD_TMP_DIR ?? path.join(process.cwd(), ".nezora-uploads");
 Promise.all([
   mkdir(NEZORA_DATA_DIR, { recursive: true }),
   mkdir(NEZORA_APPS_DIR, { recursive: true }),
-  mkdir("/tmp/cloudos-uploads", { recursive: true }),
+  mkdir(UPLOAD_TMP_DIR, { recursive: true }),
 ]).catch(() => {});
 
 // ── HTTP logger ──────────────────────────────────────────────────────────────
@@ -58,7 +62,7 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(fileUpload({
   limits: { fileSize: 500 * 1024 * 1024 },  // 500 MB for large app ZIPs
   useTempFiles: true,
-  tempFileDir: "/tmp/cloudos-uploads/",
+  tempFileDir: UPLOAD_TMP_DIR,
 }));
 
 // ── Static site hosting at /s/:slug/* ────────────────────────────────────────

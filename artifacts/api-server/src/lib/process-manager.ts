@@ -74,41 +74,48 @@ class ProcessManager extends EventEmitter {
     managed.proc = proc;
     managed.pid = proc.pid;
 
+    const setStatus = (s: ManagedProcess["status"]) => {
+      managed.status = s;
+      this.emit("status", { id: managed.id, status: s });
+    };
+
     const addLog = (line: string) => {
       managed.logs.push(`[${new Date().toISOString()}] ${line}`);
       if (managed.logs.length > MAX_LOG_LINES) managed.logs.shift();
       this.emit("log", { id: managed.id, line });
     };
 
+    setStatus("starting");
+
     proc.stdout?.on("data", (d) => {
       d.toString().split("\n").filter(Boolean).forEach(addLog);
-      if (managed.status === "starting") managed.status = "running";
+      if (managed.status === "starting") setStatus("running");
     });
     proc.stderr?.on("data", (d) => {
       d.toString().split("\n").filter(Boolean).forEach((l: string) => addLog(`[ERR] ${l}`));
-      if (managed.status === "starting") managed.status = "running";
+      if (managed.status === "starting") setStatus("running");
     });
 
     setTimeout(() => {
-      if (managed.status === "starting" && managed.proc?.pid) managed.status = "running";
+      if (managed.status === "starting" && managed.proc?.pid) setStatus("running");
     }, 3000);
 
     proc.on("exit", (code) => {
       managed.stoppedAt = new Date();
       managed.proc = undefined;
       if (code !== 0 && code !== null && managed.status !== "stopped") {
-        managed.status = "crashed";
+        setStatus("crashed");
         addLog(`[SYSTEM] Process exited with code ${code}. Scheduling restart...`);
         this.emit("crash", { id: managed.id, code });
         setTimeout(() => {
           if (managed.status === "crashed") {
             managed.restarts++;
-            managed.status = "restarting";
+            setStatus("restarting");
             this._start(managed);
           }
         }, Math.min(2000 * managed.restarts + 1000, 30000));
       } else {
-        managed.status = "stopped";
+        setStatus("stopped");
       }
     });
   }
@@ -117,6 +124,7 @@ class ProcessManager extends EventEmitter {
     const m = this.processes.get(id);
     if (!m) return false;
     m.status = "stopped";
+    this.emit("status", { id, status: "stopped" });
     if (m.proc) {
       m.proc.kill("SIGTERM");
       await new Promise(r => setTimeout(r, 500));
@@ -132,6 +140,7 @@ class ProcessManager extends EventEmitter {
     if (!m) return false;
     if (m.proc) { m.proc.kill("SIGTERM"); m.proc = undefined; }
     m.status = "restarting";
+    this.emit("status", { id, status: "restarting" });
     m.restarts++;
     await new Promise(r => setTimeout(r, 500));
     this._start(m);
@@ -167,7 +176,7 @@ class ProcessManager extends EventEmitter {
 
   updateStatus(id: string, status: ManagedProcess["status"]) {
     const m = this.processes.get(id);
-    if (m) m.status = status;
+    if (m) { m.status = status; this.emit("status", { id, status }); }
   }
 
   updateUrl(id: string, url: string) {

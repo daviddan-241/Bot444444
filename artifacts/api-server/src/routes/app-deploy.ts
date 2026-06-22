@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { assertAdmin } from "../lib/auth-guard";
 import { processManager } from "../lib/process-manager";
 import { deployQueue } from "../lib/deploy-queue";
+import { getPublicUrl } from "../lib/platform";
 import { execFile } from "child_process";
 import AdmZip from "adm-zip";
 import path from "path";
@@ -233,7 +234,7 @@ router.post("/real/app-deploy/zip", async (req: any, res) => {
   const fileBuffer: Buffer = file.data ?? await readFile(file.tempFilePath);
   const projectName = String(req.body?.name || file.name?.replace(/\.zip$/i, "") || "app");
   const slug = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Date.now().toString(36)}`;
-  const origin = `${req.protocol}://${req.get("host")}`;
+  const origin = getPublicUrl(req);
 
   const job = deployQueue.enqueue(slug, projectName, async (log) => {
     const work = await mkdtemp(path.join(tmpdir(), "nezora-app-zip-"));
@@ -264,7 +265,7 @@ router.post("/real/app-deploy/git", async (req, res) => {
   if (!url) { res.status(400).json({ ok: false, message: "url is required." }); return; }
   const projectName = name || url.split("/").pop()?.replace(/\.git$/, "") || "app";
   const slug = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Date.now().toString(36)}`;
-  const origin = `${req.protocol}://${req.get("host")}`;
+  const origin = getPublicUrl(req);
   const cloneUrl = token ? url.replace("https://", `https://x-access-token:${token}@`) : url;
 
   const job = deployQueue.enqueue(slug, projectName, async (log) => {

@@ -24,6 +24,9 @@ const TYPES: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".pdf": "application/pdf",
 };
 
 async function fileExists(file: string) {
@@ -38,12 +41,17 @@ router.get("/api/s/:slug{/*path}", async (req, res) => {
   if (!file.startsWith(root)) { res.status(403).send("Blocked"); return; }
   if (!(await fileExists(file))) file = path.join(root, "index.html");
   if (!(await fileExists(file))) {
-    res.status(404).send("Site not found. It may have been redeployed or this link is wrong. Go back to Nezora and redeploy.");
+    res.status(404).send(
+      `<html><body style="font-family:sans-serif;padding:40px">
+        <h2>Site not found</h2>
+        <p>No site exists at slug <b>${slug}</b>. It may have been deleted or redeployed.</p>
+      </body></html>`
+    );
     return;
   }
   const body = await readFile(file);
   res.setHeader("content-type", TYPES[path.extname(file).toLowerCase()] || "application/octet-stream");
-  res.setHeader("cache-control", "public, max-age=300");
+  res.setHeader("cache-control", "public, max-age=60");
   res.send(body);
 });
 

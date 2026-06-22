@@ -12,6 +12,8 @@ import databasesRouter from "./databases";
 import storageRouter from "./storage";
 import deployEngineRouter from "./deploy-engine";
 import deployRouter from "./deploy";
+import appDeployRouter from "./app-deploy";
+import processesRouter from "./processes";
 
 const router: IRouter = Router();
 
@@ -27,6 +29,8 @@ router.use(providersRouter);
 router.use(limitsRouter);
 router.use(deployEngineRouter);
 router.use(deployRouter);
+router.use(appDeployRouter);
+router.use(processesRouter);
 router.use(shellRouter);
 
 export default router;

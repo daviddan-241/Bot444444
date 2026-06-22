@@ -17,6 +17,7 @@ const NAV_SECTIONS = [
     items: [
       { label: 'Deploy Center', href: '/deploy', icon: Rocket },
       { label: 'My Hosted Sites', href: '/sites', icon: Link2 },
+      { label: 'Live Apps', href: '/processes', icon: Activity },
       { label: 'Projects', href: '/projects', icon: Box },
       { label: 'Deployments', href: '/deployments', icon: GitBranch },
     ]

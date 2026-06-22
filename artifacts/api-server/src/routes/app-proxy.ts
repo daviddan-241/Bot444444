@@ -6,7 +6,7 @@ import path from "path";
 
 const router: IRouter = Router();
 
-const APPS_DIR = process.env.NEZORA_APPS_DIR ?? "/tmp/nezora-apps";
+const APPS_DIR = process.env.NEZORA_APPS_DIR ?? path.join(process.cwd(), ".nezora-apps");
 
 function proxyToPort(port: number, req: Request, res: Response, pathPrefix: string) {
   const targetPath = req.url.replace(new RegExp(`^${pathPrefix}`), "") || "/";

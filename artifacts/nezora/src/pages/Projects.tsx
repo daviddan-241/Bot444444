@@ -94,8 +94,8 @@ export default function Projects() {
                       <button onClick={() => deleteProject(p.id)} className="p-1.5 rounded-lg hover:bg-red-50 transition">
                         <Trash2 size={13} color="#CBD5E1" />
                       </button>
-                      <Link href={`/projects/${p.id}`} className="flex items-center gap-1 text-[12px] font-600" style={{ color: '#0A84FF' }}>
-                        View <ChevronRight size={12} />
+                      <Link href="/deployments" className="flex items-center gap-1 text-[12px] font-600" style={{ color: '#0A84FF' }}>
+                        Deploys <ChevronRight size={12} />
                       </Link>
                     </div>
                   </div>

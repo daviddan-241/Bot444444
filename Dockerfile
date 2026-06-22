@@ -5,7 +5,7 @@
 
 # ── Stage 1: Build web dashboard ──────────────────────────────────────────────
 FROM node:20-alpine AS web-builder
-RUN npm install -g pnpm@10 --silent
+RUN npm install -g pnpm@10.26.1 --silent
 
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -23,7 +23,7 @@ RUN pnpm --filter @workspace/nezora run build
 
 # ── Stage 2: Build API server ─────────────────────────────────────────────────
 FROM node:20-alpine AS api-builder
-RUN npm install -g pnpm@10 --silent
+RUN npm install -g pnpm@10.26.1 --silent
 
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

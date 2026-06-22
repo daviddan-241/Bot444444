@@ -1,152 +1,133 @@
 import { useState, useRef, useEffect } from 'react';
 import { Shell } from '@/components/Shell';
-import { Bot, Send, Loader2, User, Sparkles, Trash2, AlertCircle } from 'lucide-react';
+import { Bot, Send, Loader2, User, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 
-interface Message { role: 'user' | 'assistant'; content: string; ts: number; }
+const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
+
+interface Msg { role: 'user' | 'assistant'; content: string; ts: number; }
 
 const SUGGESTIONS = [
-  'Analyze my latest deployment failure',
-  'Generate a Dockerfile for a Node.js app',
-  'How do I optimize my build time?',
-  'What is the best way to deploy a Next.js app?',
-  'Explain my build logs',
-  'Help me configure environment variables',
+  'Generate a Dockerfile for a Node.js Express API',
+  'How do I deploy a Python FastAPI app?',
+  'Why is my app crashing? How do I debug it?',
+  'Write a docker-compose.yml for a full-stack app',
+  'How do I set environment variables for my app?',
+  'Optimize my React build for production',
 ];
 
 export default function AI() {
-  const [messages, setMessages] = useState<Message[]>([{
-    role: 'assistant',
-    content: "Hi! I'm your Cloud OS AI assistant. I can help you analyze deployments, generate Dockerfiles, review build logs, suggest fixes, and answer infrastructure questions. What do you need?",
-    ts: Date.now(),
-  }]);
+  const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const base = BASE();
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  async function send(text?: string) {
-    const msg = (text || input).trim();
+  const send = async (text?: string) => {
+    const msg = (text ?? input).trim();
     if (!msg || loading) return;
     setInput('');
     setError('');
-    const userMsg: Message = { role: 'user', content: msg, ts: Date.now() };
-    setMessages(p => [...p, userMsg]);
+    const userMsg: Msg = { role: 'user', content: msg, ts: Date.now() };
+    setMessages(prev => [...prev, userMsg]);
     setLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/ai/chat`, {
-        method: 'POST',
+      const r = await fetch(`${base}/api/ai/chat`, {
+        method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, history: messages.slice(-8) }),
-        credentials: 'include',
+        body: JSON.stringify({ message: msg, history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })) }),
       });
       const d = await r.json();
-      if (d.reply) {
-        setMessages(p => [...p, { role: 'assistant', content: d.reply, ts: Date.now() }]);
-      } else {
-        setError(d.error || 'No response from AI');
-      }
-    } catch (e: any) { setError(e.message); }
+      const aiMsg: Msg = { role: 'assistant', content: d.reply ?? d.message ?? 'No response', ts: Date.now() };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch {
+      setError('Failed to reach AI — check the API server is running');
+    }
     setLoading(false);
-  }
+    inputRef.current?.focus();
+  };
 
   return (
-    <Shell>
-      <div className="flex flex-col h-[calc(100dvh-64px)] max-w-3xl mx-auto">
+    <Shell title="AI Assistant">
+      <div className="animate-rise" style={{ maxWidth: 780, margin: '0 auto', display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 120px)', minHeight: 500 }}>
         {/* Header */}
-        <div className="p-4 lg:px-7 border-b flex items-center justify-between" style={{ borderColor: '#E2E8F2' }}>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-[12px] flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)' }}>
-              <Bot size={18} color="white" />
-            </div>
-            <div>
-              <div className="text-[14px] font-700" style={{ color: '#0A0F1E' }}>AI Assistant</div>
-              <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: '#30D158' }}>
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-dot inline-block" />
-                Powered by free LLM
-              </div>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div>
+            <div className="section-title">AI Assistant</div>
+            <div className="section-subtitle">Powered by Groq Llama 3.3 · Dockerfile generation · Log analysis · Deploy advice</div>
           </div>
-          <button onClick={() => setMessages([])} className="p-2 rounded-xl hover:bg-slate-100 transition" title="Clear chat">
-            <Trash2 size={14} color="#8E9BAD" />
-          </button>
+          {messages.length > 0 && (
+            <button className="btn btn-secondary btn-sm" onClick={() => setMessages([])}><Trash2 size={13} /> Clear</button>
+          )}
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 lg:px-7 space-y-4">
-          {messages.map((m, i) => (
-            <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-rise`}>
-              {m.role === 'assistant' && (
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)' }}>
-                  <Bot size={14} color="white" />
+        {/* Chat area */}
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0 16px' }}>
+          {messages.length === 0 && (
+            <div>
+              <div style={{ textAlign: 'center', padding: '20px 0 24px' }}>
+                <div style={{ width: 56, height: 56, borderRadius: 16, background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                  <Sparkles size={24} color="#5856D6" />
                 </div>
-              )}
-              <div className={`max-w-[80%] px-4 py-3 rounded-[18px] text-[13.5px] leading-relaxed whitespace-pre-wrap ${
-                m.role === 'user'
-                  ? 'text-white rounded-tr-[6px]'
-                  : 'rounded-tl-[6px]'
-              }`} style={m.role === 'user'
-                ? { background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)', color: 'white' }
-                : { background: 'white', border: '1px solid #E2E8F2', color: '#0A0F1E' }}>
+                <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>Ask me anything about your deployments</div>
+                <div style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>I can generate Dockerfiles, analyze errors, and help you deploy</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
+                {SUGGESTIONS.map(s => (
+                  <button key={s} onClick={() => send(s)} className="card card-inner" style={{ textAlign: 'left', cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, padding: '12px 14px', transition: 'all .15s', border: '1px solid var(--border)' }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = '#007AFF')}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((m, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, flexDirection: m.role === 'user' ? 'row-reverse' : 'row' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: m.role === 'user' ? '#007AFF' : '#EDE9FE' }}>
+                {m.role === 'user' ? <User size={15} color="#fff" /> : <Bot size={15} color="#5856D6" />}
+              </div>
+              <div style={{ maxWidth: '80%', padding: '10px 14px', borderRadius: m.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: m.role === 'user' ? '#007AFF' : '#fff', color: m.role === 'user' ? '#fff' : 'var(--text-primary)', fontSize: 14, lineHeight: 1.6, border: m.role === 'assistant' ? '1px solid var(--border)' : 'none', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {m.content}
               </div>
-              {m.role === 'user' && (
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: '#F0F3F8' }}>
-                  <User size={14} color="#5E6E85" />
-                </div>
-              )}
             </div>
           ))}
+
           {loading && (
-            <div className="flex gap-3 justify-start animate-rise">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)' }}>
-                <Bot size={14} color="white" />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Bot size={15} color="#5856D6" />
               </div>
-              <div className="px-4 py-3 rounded-[18px] rounded-tl-[6px] flex items-center gap-2" style={{ background: 'white', border: '1px solid #E2E8F2' }}>
-                <Loader2 size={14} color="#8E9BAD" className="animate-spin" />
-                <span className="text-[13px]" style={{ color: '#8E9BAD' }}>Thinking…</span>
+              <div style={{ padding: '12px 16px', background: '#fff', borderRadius: '14px 14px 14px 4px', border: '1px solid var(--border)' }}>
+                <Loader2 size={16} color="#5856D6" className="spin" />
               </div>
             </div>
           )}
+
           {error && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-[14px]" style={{ background: '#FFF0EF', border: '1px solid #FFCDD0' }}>
-              <AlertCircle size={14} color="#FF453A" />
-              <span className="text-[12.5px]" style={{ color: '#C0392B' }}>{error}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#FEE2E2', borderRadius: 10, fontSize: 13, color: '#991B1B' }}>
+              <AlertCircle size={14} /> {error}
             </div>
           )}
-          {messages.length === 1 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-[12px]" style={{ color: '#8E9BAD' }}>
-                <Sparkles size={13} /> Try asking…
-              </div>
-              {SUGGESTIONS.map(s => (
-                <button key={s} onClick={() => send(s)} className="block w-full text-left px-4 py-2.5 rounded-[13px] text-[13px] hover:bg-blue-50 transition border" style={{ borderColor: '#E2E8F2', color: '#3D4D63', background: 'white' }}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-          <div ref={bottomRef} />
+
+          <div ref={endRef} />
         </div>
 
-        {/* Input */}
-        <div className="p-4 lg:px-7 border-t" style={{ borderColor: '#E2E8F2', background: 'white' }}>
-          <form onSubmit={e => { e.preventDefault(); send(); }} className="flex gap-3">
-            <input
-              className="flex-1 field"
-              placeholder="Ask about deployments, logs, Dockerfiles…"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              disabled={loading}
-            />
-            <button type="submit" disabled={loading || !input.trim()}
-              className="w-11 h-12 rounded-[14px] flex items-center justify-center flex-shrink-0 transition-all active:scale-95"
-              style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)' }}>
-              {loading ? <Loader2 size={16} color="white" className="animate-spin" /> : <Send size={16} color="white" />}
+        {/* Input area */}
+        <div className="card card-inner" style={{ flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <textarea ref={inputRef} className="field" style={{ flex: 1, minHeight: 44, maxHeight: 120, resize: 'vertical', padding: '10px 14px' }} placeholder="Ask about deployments, Dockerfiles, errors…" value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+            <button className="btn btn-primary btn-icon" onClick={() => send()} disabled={!input.trim() || loading} style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12 }}>
+              {loading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
             </button>
-          </form>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6 }}>Enter to send · Shift+Enter for new line · Llama 3.3 70B via Groq</div>
         </div>
       </div>
     </Shell>

@@ -1,78 +1,77 @@
 import { Shell } from '@/components/Shell';
-import { Zap, Plus, Play, Pause, Trash2, Clock, ChevronRight } from 'lucide-react';
+import { Zap, Plus, Play, Pause, Trash2, Clock, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 
-const AUTOMATION_TYPES = [
-  { id: 'deploy', name: 'Auto Deploy', desc: 'Deploy on every git push', icon: '🚀' },
-  { id: 'backup', name: 'Scheduled Backup', desc: 'Backup databases daily', icon: '💾' },
-  { id: 'restart', name: 'Auto Restart', desc: 'Restart on health check fail', icon: '🔄' },
-  { id: 'notify', name: 'Notifications', desc: 'Alert on deploy events', icon: '🔔' },
-  { id: 'scale', name: 'Auto Scale', desc: 'Scale based on traffic', icon: '📈' },
-  { id: 'cleanup', name: 'Cleanup Jobs', desc: 'Remove old deployments', icon: '🧹' },
+const PRESETS = [
+  { id: 'auto-restart', name: 'Auto Restart on Crash', description: 'Automatically restart any app that crashes', trigger: 'on_crash', action: 'restart', enabled: true },
+  { id: 'health-check', name: 'Health Check Every 30s', description: 'Ping all running apps and report failures', trigger: 'interval_30s', action: 'health_check', enabled: true },
+  { id: 'keep-alive', name: 'Keep Alive Ping', description: 'Self-ping every 4 min to prevent Render sleep', trigger: 'interval_4m', action: 'self_ping', enabled: true },
+  { id: 'crash-guard', name: 'Crash Guard', description: 'Stop apps that restart > 5 times to prevent loops', trigger: 'on_restart_limit', action: 'stop_loop', enabled: true },
+  { id: 'log-rotate', name: 'Log Rotation', description: 'Trim log files to 500 lines every 5 minutes', trigger: 'interval_5m', action: 'trim_logs', enabled: true },
+  { id: 'memory-alert', name: 'Memory Alert at 90%', description: 'Alert when system RAM exceeds 90%', trigger: 'ram_gt_90', action: 'alert', enabled: true },
 ];
 
 export default function Automation() {
-  const [automations, setAutomations] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState(PRESETS);
+
+  const toggle = (id: string) => setWorkflows(w => w.map(x => x.id === id ? { ...x, enabled: !x.enabled } : x));
 
   return (
-    <Shell>
-      <div className="p-4 lg:p-7 max-w-5xl mx-auto animate-rise">
-        <div className="flex items-center justify-between mb-6">
+    <Shell title="Automation">
+      <div className="animate-rise" style={{ maxWidth: 800, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
-            <h1 className="text-[22px] font-800 tracking-tight mb-0.5" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>Automation</h1>
-            <p className="text-[13px]" style={{ color: '#5E6E85' }}>Create workflows to automate your infrastructure</p>
+            <div className="section-title">Automation</div>
+            <div className="section-subtitle">Built-in workers that keep your platform running 24/7</div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-[13px] text-[13px] font-700 text-white" style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)' }}>
-            <Plus size={14} /> New Automation
-          </button>
         </div>
 
-        {/* Automation types */}
-        <div className="mb-6">
-          <h2 className="text-[11px] font-700 uppercase tracking-widest mb-3" style={{ color: '#8E9BAD' }}>Automation Templates</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {AUTOMATION_TYPES.map(a => (
-              <div key={a.id} className="card card-hover p-4 cursor-pointer">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl">{a.icon}</span>
-                  <div>
-                    <div className="text-[13.5px] font-700" style={{ color: '#0A0F1E' }}>{a.name}</div>
-                    <div className="text-[12px]" style={{ color: '#8E9BAD' }}>{a.desc}</div>
-                  </div>
+        {/* Status banner */}
+        <div className="card card-inner" style={{ marginBottom: 20, background: 'linear-gradient(135deg, #EBF5FF, #EDE9FE)', border: '1px solid #BFDBFE' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Zap size={18} color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{workflows.filter(w => w.enabled).length} automation rules active</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Workers run automatically in the background — no setup needed</div>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#34C759', fontWeight: 600 }}>
+              <span className="stat-dot dot-green dot-pulse" /> All systems running
+            </div>
+          </div>
+        </div>
+
+        {/* Workflow list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {workflows.map(w => (
+            <div key={w.id} className="card card-inner" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: w.enabled ? '#EBF5FF' : 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background .2s' }}>
+                {w.trigger.startsWith('interval') ? <Clock size={18} color={w.enabled ? '#007AFF' : '#C6C6C8'} />
+                  : w.trigger.startsWith('on_') ? <Zap size={18} color={w.enabled ? '#007AFF' : '#C6C6C8'} />
+                  : <CheckCircle2 size={18} color={w.enabled ? '#007AFF' : '#C6C6C8'} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{w.name}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{w.description}</div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <span className="pill pill-blue" style={{ fontSize: 11 }}>Trigger: {w.trigger}</span>
+                  <span className="pill pill-purple" style={{ fontSize: 11 }}>Action: {w.action}</span>
                 </div>
-                <button className="w-full mt-2 py-2 rounded-[10px] text-[12.5px] font-600 flex items-center justify-center gap-1.5" style={{ background: '#F0F3F8', color: '#5E6E85' }}>
-                  <Plus size={12} /> Add <ChevronRight size={12} />
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button className={`btn btn-sm ${w.enabled ? 'btn-secondary' : 'btn-primary'}`} onClick={() => toggle(w.id)}>
+                  {w.enabled ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Enable</>}
                 </button>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
 
-        {/* Active automations */}
-        <div>
-          <h2 className="text-[11px] font-700 uppercase tracking-widest mb-3" style={{ color: '#8E9BAD' }}>Active Automations</h2>
-          <div className="card overflow-hidden">
-            {automations.length === 0 ? (
-              <div className="p-10 text-center">
-                <Zap size={28} color="#CBD5E1" className="mx-auto mb-2" />
-                <div className="text-[13px]" style={{ color: '#8E9BAD' }}>No automations configured yet</div>
-              </div>
-            ) : automations.map((a, i) => (
-              <div key={a.id} className={`flex items-center gap-4 px-5 py-4 ${i < automations.length - 1 ? 'border-b' : ''}`} style={{ borderColor: '#E2E8F2' }}>
-                <div className="flex-1">
-                  <div className="text-[13px] font-700" style={{ color: '#0A0F1E' }}>{a.name}</div>
-                  <div className="flex items-center gap-1 text-[11.5px] mt-0.5" style={{ color: '#8E9BAD' }}>
-                    <Clock size={11} /> {a.schedule}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button className="p-1.5 rounded-[8px] hover:bg-green-50 transition"><Play size={13} color="#30D158" /></button>
-                  <button className="p-1.5 rounded-[8px] hover:bg-slate-100 transition"><Pause size={13} color="#8E9BAD" /></button>
-                  <button className="p-1.5 rounded-[8px] hover:bg-red-50 transition"><Trash2 size={13} color="#FF453A" /></button>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="card card-inner" style={{ marginTop: 20, background: 'var(--bg)', border: '1.5px dashed var(--separator)', textAlign: 'center', cursor: 'default', opacity: .6 }}>
+          <Plus size={20} style={{ margin: '0 auto 8px', opacity: .4 }} />
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Custom Workflows</div>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Coming soon — build your own trigger + action rules</div>
         </div>
       </div>
     </Shell>

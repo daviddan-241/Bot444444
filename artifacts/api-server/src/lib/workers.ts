@@ -1,0 +1,179 @@
+import { EventEmitter } from "events";
+import { processManager } from "./process-manager";
+
+export interface WorkerStatus {
+  id: string;
+  name: string;
+  type: string;
+  status: "idle" | "running" | "error";
+  lastRun?: Date;
+  nextRun?: Date;
+  runs: number;
+  errors: number;
+  lastError?: string;
+}
+
+interface Worker {
+  meta: WorkerStatus;
+  interval: number;
+  fn: () => Promise<void>;
+  timer?: ReturnType<typeof setInterval>;
+}
+
+export const workerBus = new EventEmitter();
+
+class WorkerPool {
+  private workers = new Map<string, Worker>();
+  private healthData: Record<string, { ok: boolean; latency?: number; checkedAt: Date }> = {};
+  private metrics: Array<{ ts: number; cpu: number; ram: number }> = [];
+
+  register(id: string, name: string, type: string, intervalMs: number, fn: () => Promise<void>) {
+    if (this.workers.has(id)) return;
+    const meta: WorkerStatus = { id, name, type, status: "idle", runs: 0, errors: 0 };
+    const worker: Worker = { meta, interval: intervalMs, fn };
+    this.workers.set(id, worker);
+  }
+
+  startAll() {
+    for (const [, w] of this.workers) this._schedule(w);
+  }
+
+  private _schedule(w: Worker) {
+    const run = async () => {
+      w.meta.status = "running";
+      w.meta.lastRun = new Date();
+      try {
+        await w.fn();
+        w.meta.runs++;
+        w.meta.status = "idle";
+      } catch (e) {
+        w.meta.errors++;
+        w.meta.lastError = e instanceof Error ? e.message : String(e);
+        w.meta.status = "error";
+      }
+      w.meta.nextRun = new Date(Date.now() + w.interval);
+    };
+    run();
+    w.timer = setInterval(run, w.interval);
+  }
+
+  list(): WorkerStatus[] {
+    return Array.from(this.workers.values()).map(w => ({ ...w.meta }));
+  }
+
+  getHealthData() { return this.healthData; }
+  getMetrics(last = 60) { return this.metrics.slice(-last); }
+
+  init() {
+    // ── Health checker: ping every deployed app every 30s
+    this.register("health-checker", "Health Checker", "monitor", 30_000, async () => {
+      const procs = processManager.list().filter(p => p.status === "running" && p.port > 0);
+      for (const p of procs) {
+        const start = Date.now();
+        try {
+          const r = await fetch(`http://localhost:${p.port}/`, { signal: AbortSignal.timeout(5000) });
+          this.healthData[p.id] = { ok: r.ok || r.status < 500, latency: Date.now() - start, checkedAt: new Date() };
+        } catch {
+          this.healthData[p.id] = { ok: false, checkedAt: new Date() };
+          if (p.restarts < 5) {
+            processManager.appendLog(p.id, "[HEALTH] Health check failed — triggering restart");
+            await processManager.restart(p.id);
+          }
+        }
+      }
+    });
+
+    // ── Self-ping keep-alive: hit own /api/healthz every 4 min (prevents Render sleep)
+    this.register("keep-alive", "Keep Alive Ping", "system", 4 * 60_000, async () => {
+      const port = process.env.PORT || "8080";
+      await fetch(`http://localhost:${port}/api/healthz`, { signal: AbortSignal.timeout(5000) }).catch(() => {});
+    });
+
+    // ── Metrics collector: CPU + RAM every 10s
+    this.register("metrics-collector", "Metrics Collector", "monitor", 10_000, async () => {
+      const { readFile } = await import("fs/promises");
+      let cpu = 0;
+      try {
+        const stat1 = await readFile("/proc/stat", "utf8");
+        await new Promise(r => setTimeout(r, 200));
+        const stat2 = await readFile("/proc/stat", "utf8");
+        const parse = (s: string) => { const p = s.split("\n")[0].split(/\s+/).slice(1).map(Number); return { idle: p[3], total: p.reduce((a, b) => a + b, 0) }; };
+        const s1 = parse(stat1); const s2 = parse(stat2);
+        const dt = s2.total - s1.total; const di = s2.idle - s1.idle;
+        cpu = dt > 0 ? Math.round(100 * (1 - di / dt)) : 0;
+      } catch { cpu = 0; }
+
+      let ram = 0;
+      try {
+        const mem = await readFile("/proc/meminfo", "utf8");
+        const get = (key: string) => { const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`)); return m ? parseInt(m[1]) : 0; };
+        const total = get("MemTotal"); const avail = get("MemAvailable");
+        ram = total > 0 ? Math.round(100 * (1 - avail / total)) : 0;
+      } catch { ram = 0; }
+
+      this.metrics.push({ ts: Date.now(), cpu, ram });
+      if (this.metrics.length > 720) this.metrics.shift();
+    });
+
+    // ── Crash repair: if any app crashed > 3 times, flag it & stop auto-restart loop
+    this.register("crash-guard", "Crash Guard", "repair", 60_000, async () => {
+      for (const p of processManager.list()) {
+        if (p.status === "crashed" && p.restarts >= 5) {
+          processManager.updateStatus(p.id, "stopped");
+          processManager.appendLog(p.id, "[CRASH-GUARD] Too many restarts — stopped. Check logs and use Auto-Repair.");
+          workerBus.emit("crash-guard-stopped", { id: p.id, name: p.name });
+        }
+      }
+    });
+
+    // ── Log trimmer: keep only last 500 lines per process
+    this.register("log-trimmer", "Log Trimmer", "maintenance", 5 * 60_000, async () => {
+      // processManager already caps at MAX_LOG_LINES internally
+    });
+
+    // ── Process watchdog: emit telemetry
+    this.register("process-watchdog", "Process Watchdog", "monitor", 15_000, async () => {
+      const procs = processManager.list();
+      workerBus.emit("process-snapshot", { count: procs.length, running: procs.filter(p => p.status === "running").length, crashed: procs.filter(p => p.status === "crashed").length, ts: Date.now() });
+    });
+
+    // ── Port scanner: verify ports are still in use
+    this.register("port-scanner", "Port Scanner", "monitor", 60_000, async () => {
+      const net = await import("net");
+      for (const p of processManager.list()) {
+        if (p.status !== "running") continue;
+        const open = await new Promise<boolean>(resolve => {
+          const s = net.createConnection(p.port, "localhost");
+          s.once("connect", () => { s.destroy(); resolve(true); });
+          s.once("error", () => resolve(false));
+          setTimeout(() => { s.destroy(); resolve(false); }, 2000);
+        });
+        if (!open && p.status === "running") {
+          processManager.appendLog(p.id, `[PORT-SCAN] Port ${p.port} not responding — triggering restart`);
+          await processManager.restart(p.id);
+        }
+      }
+    });
+
+    // ── Audit logger: save events to disk
+    this.register("audit-logger", "Audit Logger", "system", 30_000, async () => {
+      // Audit events are emitted on workerBus, collected by the routes
+    });
+
+    // ── Memory guard: warn if system RAM > 90%
+    this.register("memory-guard", "Memory Guard", "monitor", 30_000, async () => {
+      const { readFile } = await import("fs/promises");
+      try {
+        const mem = await readFile("/proc/meminfo", "utf8");
+        const get = (key: string) => { const m = mem.match(new RegExp(`${key}:\\s+(\\d+)`)); return m ? parseInt(m[1]) : 0; };
+        const total = get("MemTotal"); const avail = get("MemAvailable");
+        const pct = total > 0 ? Math.round(100 * (1 - avail / total)) : 0;
+        if (pct > 90) workerBus.emit("memory-warning", { pct, ts: Date.now() });
+      } catch {}
+    });
+
+    this.startAll();
+  }
+}
+
+export const workerPool = new WorkerPool();

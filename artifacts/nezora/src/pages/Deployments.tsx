@@ -1,96 +1,77 @@
 import { useEffect, useState } from 'react';
 import { Shell } from '@/components/Shell';
-import { StatusPill } from '@/components/StatusPill';
-import { Rocket, RefreshCw, ExternalLink, Trash2, RotateCcw, Clock, Globe } from 'lucide-react';
+import { GitBranch, RefreshCw, ExternalLink, CheckCircle2, XCircle, Clock, Rocket } from 'lucide-react';
 import { Link } from 'wouter';
+
+const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
 
 export default function Deployments() {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const base = BASE();
 
-  async function load() {
+  const load = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/projects`);
-      if (r.ok) { const d = await r.json(); setProjects(d.projects || []); }
+      const r = await fetch(`${base}/api/projects`, { credentials: 'include' });
+      const d = await r.json();
+      setProjects(d.projects ?? []);
     } catch {}
     setLoading(false);
-  }
+  };
 
   useEffect(() => { load(); }, []);
 
-  const allDeps = projects.flatMap(p => (p.deployments || []).map((d: any) => ({ ...d, projectName: p.name, projectId: p.id })));
+  const allDeps = projects.flatMap((p: any) =>
+    (p.deployments ?? []).map((d: any) => ({ ...d, projectName: p.name, projectId: p.id }))
+  ).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
-    <Shell>
-      <div className="p-4 lg:p-7 max-w-5xl mx-auto animate-rise">
-        <div className="flex items-center justify-between mb-6">
+    <Shell title="Deployments">
+      <div className="animate-rise" style={{ maxWidth: 900, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
-            <h1 className="text-[22px] font-800 tracking-tight mb-0.5" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>Deployments</h1>
-            <p className="text-[13px]" style={{ color: '#5E6E85' }}>{allDeps.length} total deployments across {projects.length} projects</p>
+            <div className="section-title">Deployments</div>
+            <div className="section-subtitle">{allDeps.length} total deployment{allDeps.length !== 1 ? 's' : ''}</div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={load} className="p-2.5 rounded-[12px] hover:bg-slate-100 transition" title="Refresh">
-              <RefreshCw size={15} color="#5E6E85" />
-            </button>
-            <Link href="/deploy" className="flex items-center gap-2 px-4 py-2.5 rounded-[13px] text-[13px] font-700 text-white" style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)' }}>
-              <Rocket size={14} /> New Deploy
-            </Link>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={load} disabled={loading}><RefreshCw size={13} className={loading ? 'spin' : ''} /></button>
+            <Link href="/deploy" className="btn btn-primary btn-sm"><Rocket size={13} /> New Deploy</Link>
           </div>
         </div>
 
-        <div className="card overflow-hidden">
-          {loading ? (
-            <div className="p-12 text-center">
-              <RefreshCw size={22} color="#CBD5E1" className="animate-spin mx-auto mb-3" />
-              <div className="text-[13px]" style={{ color: '#8E9BAD' }}>Loading deployments…</div>
-            </div>
-          ) : allDeps.length === 0 ? (
-            <div className="p-12 text-center">
-              <Rocket size={32} color="#CBD5E1" className="mx-auto mb-3" />
-              <div className="text-[14px] font-600 mb-1" style={{ color: '#0A0F1E' }}>No deployments yet</div>
-              <div className="text-[13px] mb-4" style={{ color: '#8E9BAD' }}>Your deployment history will appear here</div>
-              <Link href="/deploy" className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[12px] text-[13px] font-700 text-white" style={{ background: '#0A84FF' }}>
-                <Rocket size={13} /> Deploy your first project
-              </Link>
-            </div>
-          ) : (
-            <div>
-              {/* Header */}
-              <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b" style={{ borderColor: '#E2E8F2' }}>
-                <div className="col-span-4 text-[11px] font-700 uppercase tracking-wider" style={{ color: '#8E9BAD' }}>Project</div>
-                <div className="col-span-3 text-[11px] font-700 uppercase tracking-wider" style={{ color: '#8E9BAD' }}>Status</div>
-                <div className="col-span-3 text-[11px] font-700 uppercase tracking-wider" style={{ color: '#8E9BAD' }}>URL</div>
-                <div className="col-span-2 text-[11px] font-700 uppercase tracking-wider" style={{ color: '#8E9BAD' }}>Date</div>
-              </div>
-              {allDeps.map((d, i) => (
-                <div key={d.id} className={`grid grid-cols-12 gap-4 px-5 py-4 items-center ${i < allDeps.length - 1 ? 'border-b' : ''} hover:bg-slate-50 transition`} style={{ borderColor: '#E2E8F2' }}>
-                  <div className="col-span-4 overflow-hidden">
-                    <div className="text-[13px] font-700 truncate" style={{ color: '#0A0F1E' }}>{d.projectName}</div>
-                    <div className="text-[11.5px] font-500 font-mono truncate" style={{ color: '#8E9BAD' }}>{d.id?.slice(0, 12)}…</div>
-                  </div>
-                  <div className="col-span-3">
-                    <StatusPill status={d.status} />
-                  </div>
-                  <div className="col-span-3 overflow-hidden">
-                    {d.url ? (
-                      <a href={d.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[12px] font-500 truncate" style={{ color: '#0A84FF' }}>
-                        <Globe size={11} />
-                        <span className="truncate">{d.url.replace(/^https?:\/\//, '')}</span>
-                        <ExternalLink size={10} />
-                      </a>
-                    ) : <span className="text-[12px]" style={{ color: '#CBD5E1' }}>—</span>}
-                  </div>
-                  <div className="col-span-2 flex items-center gap-1 text-[11.5px]" style={{ color: '#8E9BAD' }}>
-                    <Clock size={11} />
-                    {new Date(d.createdAt || d.time || Date.now()).toLocaleDateString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {allDeps.length === 0 ? (
+          <div className="card empty-state">
+            <GitBranch size={40} className="empty-state-icon" />
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>No deployments yet</div>
+            <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginBottom: 20 }}>Deploy an app to see the history here</div>
+            <Link href="/deploy" className="btn btn-primary"><Rocket size={15} /> Deploy Now</Link>
+          </div>
+        ) : (
+          <div className="card">
+            <table className="data-table">
+              <thead><tr><th>App</th><th>Source</th><th>Stack</th><th>Status</th><th>Deployed</th><th>URL</th></tr></thead>
+              <tbody>
+                {allDeps.map((d: any) => (
+                  <tr key={d.id}>
+                    <td style={{ fontWeight: 600 }}>{d.projectName}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-tertiary)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.source ?? '—'}</td>
+                    <td>{d.stack ? <span className="pill pill-blue" style={{ fontSize: 11 }}>{d.stack}</span> : '—'}</td>
+                    <td>
+                      {d.status === 'success'
+                        ? <span className="pill pill-green"><CheckCircle2 size={11} /> success</span>
+                        : d.status === 'failed'
+                        ? <span className="pill pill-red"><XCircle size={11} /> failed</span>
+                        : <span className="pill pill-yellow"><Clock size={11} /> {d.status}</span>}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{new Date(d.createdAt).toLocaleString()}</td>
+                    <td>{d.url ? <a href={d.url} target="_blank" rel="noreferrer" style={{ color: '#007AFF', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}><ExternalLink size={12} /> Open</a> : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </Shell>
   );

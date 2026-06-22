@@ -1,93 +1,114 @@
 import { useEffect, useState, useRef } from 'react';
 import { Shell } from '@/components/Shell';
-import { FileText, RefreshCw, Download, Search, Filter, Terminal } from 'lucide-react';
+import { FileText, RefreshCw, Download, Search, Trash2 } from 'lucide-react';
+
+const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
+
+function LogLine({ line }: { line: string }) {
+  const cls = line.includes('[ERR]') || line.toLowerCase().includes('error') ? 'log-err'
+    : line.toLowerCase().includes('warn') ? 'log-info'
+    : (line.includes('[DEPLOY]') || line.includes('[SYSTEM]') || line.includes('success')) ? 'log-ok'
+    : '';
+  return <div className={cls}>{line}</div>;
+}
 
 export default function Logs() {
+  const [processes, setProcesses] = useState<any[]>([]);
+  const [selected, setSelected] = useState<string>('');
   const [logs, setLogs] = useState<string[]>([]);
   const [filter, setFilter] = useState('');
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logRef = useRef<HTMLDivElement>(null);
+  const base = BASE();
 
-  async function fetchLogs() {
-    setLoading(true);
+  const loadProcs = async () => {
     try {
-      const r = await fetch(`${BASE}/api/system/logs`, { credentials: 'include' });
-      if (r.ok) { const d = await r.json(); setLogs(d.logs || []); }
+      const r = await fetch(`${base}/api/system/processes`, { credentials: 'include' });
+      const d = await r.json();
+      setProcesses(d.processes ?? []);
+      if (!selected && d.processes?.length > 0) setSelected(d.processes[0].id);
     } catch {}
-    setLoading(false);
-  }
+  };
 
-  useEffect(() => { fetchLogs(); }, []);
+  const loadLogs = async (id: string) => {
+    if (!id) return;
+    try {
+      const r = await fetch(`${base}/api/processes/${id}/logs?tail=200`, { credentials: 'include' });
+      const d = await r.json();
+      setLogs(d.logs ?? []);
+    } catch {}
+    if (autoScroll) setTimeout(() => logRef.current?.scrollTo(0, logRef.current.scrollHeight), 50);
+  };
+
+  useEffect(() => { loadProcs(); }, []);
+  useEffect(() => {
+    if (selected) {
+      loadLogs(selected);
+      const t = setInterval(() => loadLogs(selected), 3000);
+      return () => clearInterval(t);
+    }
+  }, [selected]);
 
   const filtered = filter ? logs.filter(l => l.toLowerCase().includes(filter.toLowerCase())) : logs;
 
-  function download() {
+  const download = () => {
     const blob = new Blob([filtered.join('\n')], { type: 'text/plain' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `cloud-os-logs-${Date.now()}.txt`;
-    a.click();
-  }
-
-  function lineColor(line: string) {
-    if (/error|err|fail/i.test(line)) return '#FF453A';
-    if (/warn/i.test(line)) return '#FF9F0A';
-    if (/success|ok|done|deployed/i.test(line)) return '#30D158';
-    if (/info|start/i.test(line)) return '#60A5FA';
-    return '#CBD5E1';
-  }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `${selected}-logs.txt`; a.click();
+  };
 
   return (
-    <Shell>
-      <div className="p-4 lg:p-7 max-w-5xl mx-auto animate-rise">
-        <div className="flex items-center justify-between mb-6">
+    <Shell title="Logs">
+      <div className="animate-rise" style={{ maxWidth: 900, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <h1 className="text-[22px] font-800 tracking-tight mb-0.5" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>Logs</h1>
-            <p className="text-[13px]" style={{ color: '#5E6E85' }}>{filtered.length} log entries</p>
+            <div className="section-title">Logs</div>
+            <div className="section-subtitle">Real-time output from running processes</div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={fetchLogs} className="p-2.5 rounded-[12px] hover:bg-slate-100 transition">
-              <RefreshCw size={15} color="#5E6E85" className={loading ? 'animate-spin' : ''} />
-            </button>
-            <button onClick={download} className="flex items-center gap-2 px-3.5 py-2.5 rounded-[12px] text-[12.5px] font-600 border hover:bg-slate-50 transition" style={{ borderColor: '#E2E8F2', color: '#5E6E85' }}>
-              <Download size={13} /> Export
-            </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={download} disabled={!logs.length}><Download size={13} /></button>
+            <button className="btn btn-secondary btn-sm" onClick={() => { setLogs([]); }}><Trash2 size={13} /></button>
           </div>
         </div>
 
-        <div className="card overflow-hidden">
-          {/* Filter bar */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: '#E2E8F2' }}>
-            <Search size={13} color="#8E9BAD" />
-            <input
-              className="flex-1 bg-transparent border-none outline-none text-[13px]"
-              placeholder="Filter logs…"
-              value={filter}
-              onChange={e => setFilter(e.target.value)}
-              style={{ color: '#0A0F1E' }}
-            />
-            {filter && (
-              <button onClick={() => setFilter('')} className="text-[11px] font-600 px-2 py-0.5 rounded-full" style={{ background: '#F0F3F8', color: '#5E6E85' }}>Clear</button>
-            )}
+        {/* Process selector */}
+        <div className="card card-inner" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select className="field" style={{ flex: 1, minWidth: 200 }} value={selected} onChange={e => setSelected(e.target.value)}>
+              <option value="">— Select a process —</option>
+              {processes.map((p: any) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.status})</option>
+              ))}
+            </select>
+            <button className="btn btn-secondary btn-sm" onClick={() => selected && loadLogs(selected)}><RefreshCw size={13} /></button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0 }}>
+              <input type="checkbox" checked={autoScroll} onChange={e => setAutoScroll(e.target.checked)} style={{ width: 14, height: 14 }} />
+              Auto-scroll
+            </label>
           </div>
+        </div>
 
-          {/* Log output */}
-          <div className="log-block rounded-none" style={{ maxHeight: '60vh', overflowY: 'auto', borderRadius: 0 }}>
-            {filtered.length === 0 ? (
-              <div className="py-8 text-center">
-                <Terminal size={22} color="#3D4D63" className="mx-auto mb-2" />
-                <div style={{ color: '#8E9BAD' }}>
-                  {loading ? 'Loading logs…' : 'No logs found'}
-                </div>
-              </div>
-            ) : filtered.map((line, i) => (
-              <div key={i} style={{ color: lineColor(line), borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: 2, marginBottom: 2 }}>
-                <span style={{ color: '#4A5568', marginRight: 12, userSelect: 'none', fontSize: 11 }}>{String(i + 1).padStart(4, ' ')}</span>
-                {line}
-              </div>
-            ))}
-            <div ref={bottomRef} />
+        {/* Filter */}
+        <div className="card card-inner" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Search size={15} color="var(--text-tertiary)" />
+            <input className="field field-sm" style={{ flex: 1, background: 'transparent', border: 'none', padding: 0, height: 'auto' }} placeholder="Filter logs…" value={filter} onChange={e => setFilter(e.target.value)} />
+            {filter && <button className="btn btn-secondary btn-sm" onClick={() => setFilter('')}>Clear</button>}
+          </div>
+        </div>
+
+        {/* Log output */}
+        <div className="card">
+          <div style={{ padding: '10px 16px 8px', borderBottom: '1px solid rgba(255,255,255,.1)', display: 'flex', alignItems: 'center', gap: 8, background: '#1C1C1E', borderRadius: '16px 16px 0 0' }}>
+            <FileText size={13} color="#5AC8F5" />
+            <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#8E8E93' }}>
+              {selected ? processes.find(p => p.id === selected)?.name ?? selected : 'No process selected'} · {filtered.length} lines
+            </span>
+          </div>
+          <div className="log-box" ref={logRef} style={{ maxHeight: 480, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+            {!selected && <div style={{ color: '#5AC8F5' }}>Select a process above to view logs</div>}
+            {selected && filtered.length === 0 && <div style={{ color: '#636366' }}>No log output yet — deploy an app to see logs</div>}
+            {filtered.map((l, i) => <LogLine key={i} line={l} />)}
           </div>
         </div>
       </div>

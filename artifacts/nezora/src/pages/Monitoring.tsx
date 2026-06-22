@@ -1,144 +1,155 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Shell } from '@/components/Shell';
-import { Activity, RefreshCw, TrendingUp, Cpu, HardDrive, Wifi, Clock } from 'lucide-react';
+import { Activity, RefreshCw, Cpu, Server, HardDrive, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-interface Stats { cpu: number; ram: number; storage: number; uptime: string; network?: { rx: number; tx: number }; projects: number; deployments: number; }
+const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
+
+function MiniChart({ data, color = '#007AFF' }: { data: number[]; color?: string }) {
+  if (!data.length) return null;
+  const max = Math.max(...data, 1);
+  const w = 120; const h = 40;
+  const pts = data.slice(-30).map((v, i, arr) => `${(i / (arr.length - 1)) * w},${h - (v / max) * h}`).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function MetricCard({ label, value, sub, icon: Icon, color, chart, pct }: any) {
+  return (
+    <div className="card card-inner">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={15} color={color} strokeWidth={2} />
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>{label}</span>
+        </div>
+        {chart && <MiniChart data={chart} color={color} />}
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{sub}</div>}
+      {pct !== undefined && (
+        <div className="bar-track" style={{ marginTop: 10 }}>
+          <div className={`bar-fill ${pct > 85 ? 'bar-red' : pct > 65 ? 'bar-orange' : 'bar-blue'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Monitoring() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [history, setHistory] = useState<Stats[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [workers, setWorkers] = useState<any[]>([]);
+  const [metrics, setMetrics] = useState<any[]>([]);
+  const [health, setHealth] = useState<any>({});
   const [loading, setLoading] = useState(true);
-  const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const base = BASE();
 
-  async function fetchStats() {
+  const load = async () => {
     try {
-      const r = await fetch(`${BASE}/api/system/stats`);
-      if (r.ok) {
-        const d = await r.json();
-        setStats(d);
-        setHistory(p => [...p.slice(-29), d]);
-      }
+      const [sr, wr, hr] = await Promise.all([
+        fetch(`${base}/api/system/stats`, { credentials: 'include' }).then(r => r.json()).catch(() => null),
+        fetch(`${base}/api/system/workers`, { credentials: 'include' }).then(r => r.json()).catch(() => ({ workers: [] })),
+        fetch(`${base}/api/system/health`, { credentials: 'include' }).then(r => r.json()).catch(() => ({ health: {} })),
+      ]);
+      if (sr) { setStats(sr); setMetrics(sr.metrics ?? []); }
+      setWorkers(wr.workers ?? []);
+      setHealth(hr.health ?? {});
     } catch {}
     setLoading(false);
-  }
+  };
 
-  useEffect(() => { fetchStats(); const t = setInterval(fetchStats, 4000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, []);
 
-  const metricCards = [
-    { label: 'CPU Usage', value: stats?.cpu ?? 0, unit: '%', color: '#0A84FF', icon: Cpu, bg: '#EEF6FF' },
-    { label: 'RAM Usage', value: stats?.ram ?? 0, unit: '%', color: '#5E5CE6', icon: HardDrive, bg: '#F0EFFE' },
-    { label: 'Storage', value: stats?.storage ?? 0, unit: '%', color: '#30D158', icon: HardDrive, bg: '#EDFAF2' },
-    { label: 'Network RX', value: stats?.network?.rx ?? 0, unit: 'KB/s', color: '#FF9F0A', icon: Wifi, bg: '#FFF8EC' },
-  ];
-
-  function Sparkline({ data, color }: { data: number[]; color: string }) {
-    const max = Math.max(...data, 1);
-    const pts = data.map((v, i) => `${(i / (data.length - 1)) * 100},${100 - (v / max) * 80}`).join(' ');
-    return (
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-12">
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
+  const cpuHistory = metrics.map((m: any) => m.cpu);
+  const ramHistory = metrics.map((m: any) => m.ram);
 
   return (
-    <Shell>
-      <div className="p-4 lg:p-7 max-w-5xl mx-auto animate-rise">
-        <div className="flex items-center justify-between mb-6">
+    <Shell title="Monitoring">
+      <div className="animate-rise" style={{ maxWidth: 900, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
-            <h1 className="text-[22px] font-800 tracking-tight mb-0.5" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>Monitoring</h1>
-            <p className="text-[13px]" style={{ color: '#5E6E85' }}>Live system metrics · updates every 4s</p>
+            <div className="section-title">Monitoring</div>
+            <div className="section-subtitle">Live system metrics — updates every 8 seconds</div>
           </div>
-          <div className="flex items-center gap-2 text-[12px]" style={{ color: '#30D158' }}>
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-dot inline-block" />
-            Live
-          </div>
+          <button className="btn btn-secondary btn-sm" onClick={load} disabled={loading}>
+            <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
+          </button>
         </div>
 
         {/* Metric cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-          {metricCards.map(m => {
-            const Icon = m.icon;
-            const histData = history.map(h => {
-              if (m.label === 'CPU Usage') return h.cpu;
-              if (m.label === 'RAM Usage') return h.ram;
-              if (m.label === 'Storage') return h.storage;
-              return h.network?.rx ?? 0;
-            });
-            return (
-              <div key={m.label} className="card p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: m.bg }}>
-                    <Icon size={15} style={{ color: m.color }} />
-                  </div>
-                  <div className="text-[22px] font-800" style={{ color: '#0A0F1E', letterSpacing: '-0.02em' }}>
-                    {m.value}<span className="text-[12px] font-500 ml-0.5" style={{ color: '#8E9BAD' }}>{m.unit}</span>
-                  </div>
-                </div>
-                <div className="text-[12px] font-500 mb-1" style={{ color: '#5E6E85' }}>{m.label}</div>
-                {histData.length > 1 && <Sparkline data={histData} color={m.color} />}
-              </div>
-            );
-          })}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+          <MetricCard label="CPU" value={`${stats?.cpu ?? 0}%`} sub="Real-time" icon={Cpu} color="#007AFF" chart={cpuHistory} pct={stats?.cpu} />
+          <MetricCard label="RAM" value={`${stats?.mem?.percent ?? 0}%`} sub={stats?.mem ? `${stats.mem.usedMb} / ${stats.mem.totalMb} MB` : '—'} icon={Server} color="#5856D6" chart={ramHistory} pct={stats?.mem?.percent} />
+          <MetricCard label="Disk" value={`${stats?.disk?.percent ?? 0}%`} sub={stats?.disk ? `${stats.disk.usedMb} / ${stats.disk.totalMb} MB` : '—'} icon={HardDrive} color="#34C759" pct={stats?.disk?.percent} />
+          <MetricCard label="Uptime" value={stats?.uptime?.pretty ?? '—'} sub="Since last restart" icon={Clock} color="#FF9500" />
         </div>
 
-        {/* Uptime & system */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock size={16} color="#0A84FF" />
-              <span className="text-[13px] font-700" style={{ color: '#0A0F1E' }}>System Uptime</span>
-            </div>
-            <div className="text-[32px] font-800" style={{ color: '#0A0F1E', letterSpacing: '-0.03em' }}>
-              {stats?.uptime ?? '—'}
-            </div>
-            <div className="mt-3 flex items-center gap-1.5 text-[12px]" style={{ color: '#30D158' }}>
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-dot inline-block" />
-              All systems operational
-            </div>
-          </div>
-
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={16} color="#5E5CE6" />
-              <span className="text-[13px] font-700" style={{ color: '#0A0F1E' }}>Platform Stats</span>
-            </div>
-            <div className="space-y-3">
-              {[
-                ['Projects', stats?.projects ?? '—'],
-                ['Total Deployments', stats?.deployments ?? '—'],
-                ['TX', `${stats?.network?.tx ?? 0} KB/s`],
-              ].map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between">
-                  <span className="text-[12.5px]" style={{ color: '#5E6E85' }}>{k}</span>
-                  <span className="text-[13px] font-700" style={{ color: '#0A0F1E' }}>{String(v)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Resource bars */}
-        <div className="card p-5">
-          <div className="text-[13px] font-700 mb-4" style={{ color: '#0A0F1E' }}>Resource Overview</div>
-          <div className="space-y-4">
+        {/* Processes summary */}
+        <div className="card card-inner" style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Process Health</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
             {[
-              { label: 'CPU', value: stats?.cpu ?? 0, color: '#0A84FF' },
-              { label: 'RAM', value: stats?.ram ?? 0, color: '#5E5CE6' },
-              { label: 'Storage', value: stats?.storage ?? 0, color: '#30D158' },
+              { label: 'Running', value: stats?.processes?.running ?? 0, color: '#34C759' },
+              { label: 'Crashed', value: stats?.processes?.crashed ?? 0, color: '#FF3B30' },
+              { label: 'Stopped', value: stats?.processes?.stopped ?? 0, color: '#C6C6C8' },
+              { label: 'Total', value: stats?.processes?.total ?? 0, color: '#007AFF' },
             ].map(m => (
-              <div key={m.label}>
-                <div className="flex justify-between mb-1.5">
-                  <span className="text-[12.5px] font-500" style={{ color: '#5E6E85' }}>{m.label}</span>
-                  <span className="text-[12.5px] font-700" style={{ color: '#0A0F1E' }}>{m.value}%</span>
-                </div>
-                <div className="metric-bar" style={{ height: 8 }}>
-                  <div className="metric-bar-fill" style={{ width: `${m.value}%`, background: m.color }} />
-                </div>
+              <div key={m.label} style={{ textAlign: 'center', padding: '12px 8px', background: 'var(--bg)', borderRadius: 10 }}>
+                <div style={{ fontSize: 24, fontWeight: 700, color: m.color }}>{m.value}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{m.label}</div>
               </div>
             ))}
           </div>
         </div>
+
+        {/* Workers */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ padding: '14px 20px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={15} color="#007AFF" />
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Background Workers ({workers.length})</span>
+          </div>
+          <table className="data-table">
+            <thead><tr><th>Worker</th><th>Type</th><th>Status</th><th>Runs</th><th>Errors</th><th>Last Run</th></tr></thead>
+            <tbody>
+              {workers.map((w: any) => (
+                <tr key={w.id}>
+                  <td style={{ fontWeight: 600 }}>{w.name}</td>
+                  <td><span className="pill pill-blue" style={{ fontSize: 11 }}>{w.type}</span></td>
+                  <td>
+                    <span className={`pill ${w.status === 'error' ? 'pill-red' : w.status === 'running' ? 'pill-yellow' : 'pill-green'}`}>
+                      <span className={`stat-dot ${w.status === 'error' ? 'dot-red' : 'dot-green dot-pulse'}`} />
+                      {w.status}
+                    </span>
+                  </td>
+                  <td style={{ color: 'var(--text-tertiary)' }}>{w.runs}</td>
+                  <td style={{ color: w.errors > 0 ? '#FF3B30' : 'var(--text-tertiary)' }}>{w.errors}</td>
+                  <td style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{w.lastRun ? new Date(w.lastRun).toLocaleTimeString() : '—'}</td>
+                </tr>
+              ))}
+              {workers.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-tertiary)', padding: 32 }}>No workers running yet — start the API server</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {/* App health checks */}
+        {Object.keys(health).length > 0 && (
+          <div className="card card-inner">
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>App Health Checks</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {Object.entries(health).map(([id, h]: any) => (
+                <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14 }}>
+                  {h.ok ? <CheckCircle2 size={16} color="#34C759" /> : <AlertTriangle size={16} color="#FF3B30" />}
+                  <span style={{ flex: 1, fontWeight: 500 }}>{id}</span>
+                  {h.latency && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{h.latency}ms</span>}
+                  <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{h.checkedAt ? new Date(h.checkedAt).toLocaleTimeString() : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </Shell>
   );

@@ -72,16 +72,32 @@ router.get("/real/workers", (_req, res) => {
   res.json({ ok: true, workers: workerPool.list(), queue: deployQueue.workerCount() });
 });
 
+// Allowed origins for SSE — same logic used by the main CORS middleware.
+const ALLOWED_ORIGINS = (() => {
+  const envOrigins = process.env.CORS_ALLOWED_ORIGINS;
+  if (envOrigins) return envOrigins.split(",").map(o => o.trim());
+  const replit = process.env.REPLIT_DOMAINS;
+  if (replit) return replit.split(",").map(d => `https://${d.trim()}`);
+  return [] as string[]; // empty = same-origin only (proxy handles it)
+})();
+
+function sseOriginHeader(origin: string | undefined): string {
+  if (!origin) return "null";
+  if (ALLOWED_ORIGINS.length === 0) return origin; // dev: reflect (no credentials risk on localhost)
+  return ALLOWED_ORIGINS.includes(origin) ? origin : "null";
+}
+
 // ── SSE: Unified real-time event stream ───────────────────────────────────────
 // Named SSE events — EventSource auto-reconnects on disconnect.
 // Replaces all client-side polling for process/job/worker state.
 
 router.get("/real/events/stream", (req, res) => {
+  if (!assertAdmin(req, res)) return; // EventSource sends cookies when withCredentials=true
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no"); // disable Nginx/Render/Railway proxy buffering
-  res.setHeader("Access-Control-Allow-Origin", req.headers.origin ?? "*");
+  res.setHeader("Access-Control-Allow-Origin", sseOriginHeader(req.headers.origin));
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.flushHeaders();
 
@@ -135,13 +151,14 @@ router.get("/real/events/stream", (req, res) => {
 // Replays last 150 lines then streams new lines in real time.
 
 router.get("/real/processes/:id/logs/stream", (req, res) => {
+  if (!assertAdmin(req, res)) return;
   const { id } = req.params;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("Access-Control-Allow-Origin", req.headers.origin ?? "*");
+  res.setHeader("Access-Control-Allow-Origin", sseOriginHeader(req.headers.origin));
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.flushHeaders();
 

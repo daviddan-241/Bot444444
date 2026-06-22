@@ -1,272 +1,284 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, ExternalLink, FileArchive, Github, Loader2, Play, ServerCog, Sparkles, TerminalSquare, UploadCloud } from 'lucide-react';
-import { PhoneHeader } from '@/components/PhoneHeader';
+import { useState, useRef } from 'react';
 import { Shell } from '@/components/Shell';
 import { StatusPill } from '@/components/StatusPill';
+import { Rocket, Github, Upload, Terminal, ChevronDown, ChevronUp, ExternalLink, Loader2, CheckCircle2, AlertCircle, Zap, Box } from 'lucide-react';
 
-type CommandLog = { command: string; code: number; stdout: string; stderr: string };
-type DeployResult = { ok: boolean; message: string; url?: string; repoUrl?: string; renderDeployUrl?: string; commands?: CommandLog[]; recommendation?: { framework: string; installCommand: string; buildCommand: string; startCommand: string; outputDirectory: string } };
-type DeployStep = { label: string; state: 'done' | 'active' | 'idle' | 'error' };
+type Tab = 'git' | 'zip' | 'docker' | 'template';
+type Target = 'pages' | 'render' | 'instant';
 
-export default function RealPage() {
-  const [owner, setOwner] = useState('');
+const TEMPLATES = [
+  { id: 'node-api', name: 'Node.js API', desc: 'Express REST API', icon: '🟢', cmd: 'node index.js' },
+  { id: 'react-vite', name: 'React + Vite', desc: 'Frontend SPA', icon: '⚛️', cmd: 'npm run build' },
+  { id: 'nextjs', name: 'Next.js', desc: 'Full-stack React', icon: '▲', cmd: 'next start' },
+  { id: 'fastapi', name: 'FastAPI', desc: 'Python REST API', icon: '🐍', cmd: 'uvicorn main:app' },
+  { id: 'discord-bot', name: 'Discord Bot', desc: 'Bot template', icon: '🤖', cmd: 'node bot.js' },
+  { id: 'static', name: 'Static Site', desc: 'HTML/CSS/JS', icon: '🌐', cmd: 'serve .' },
+];
+
+export default function Deploy() {
+  const [tab, setTab] = useState<Tab>('git');
+  const [target, setTarget] = useState<Target>('pages');
+  const [token, setToken] = useState(() => localStorage.getItem('gh_token') || '');
+  const [owner, setOwner] = useState(() => localStorage.getItem('gh_owner') || '');
   const [repo, setRepo] = useState('');
   const [branch, setBranch] = useState('main');
-  const [token, setToken] = useState('');
-  const [zipFile, setZipFile] = useState<File | null>(null);
-  const [zipTarget, setZipTarget] = useState('instant');
-  const [zipKind, setZipKind] = useState('web');
-  const [result, setResult] = useState<DeployResult | null>(null);
-  const [steps, setSteps] = useState<DeployStep[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [shell, setShell] = useState('doctor');
-  const [shellOut, setShellOut] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [logs, setLogs] = useState<string[]>([]);
+  const [status, setStatus] = useState<'idle' | 'building' | 'success' | 'failed'>('idle');
+  const [result, setResult] = useState<any>(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
-  const canDeployRepo = Boolean(owner && repo && token);
-  const canDeployZip = zipTarget === 'instant' ? Boolean(zipFile) : Boolean(owner && token && zipFile && repo);
-  const commands = useMemo(() => result?.commands ?? [], [result]);
+  function log(msg: string) { setLogs(p => [...p, msg]); }
 
-  useEffect(() => {
-    setOwner(localStorage.getItem('nezora.githubOwner') || '');
-    setBranch(localStorage.getItem('nezora.defaultBranch') || 'main');
-    setToken(localStorage.getItem('nezora.githubToken') || '');
-  }, []);
-
-  function startSteps(upload = false) {
-    setSteps([
-      { label: upload ? 'Read ZIP' : 'Connect repo', state: 'active' },
-      { label: 'Detect stack', state: 'idle' },
-      { label: 'Install & build', state: 'idle' },
-      { label: upload && zipTarget === 'render' ? 'Create Render handoff' : zipTarget === 'instant' ? 'Serve on Nezora' : 'Publish to Pages', state: 'idle' },
-      { label: 'Return URL', state: 'idle' }
-    ]);
-  }
-  function completeSteps(ok: boolean) {
-    setSteps((old) => old.map((step, i) => ({ ...step, state: ok ? 'done' : i === old.length - 1 ? 'error' : 'done' })));
-  }
-
-  async function deployRepo() {
-    if (!canDeployRepo) return;
-    setBusy(true); setResult(null); startSteps(false);
-    const res = await fetch('/api/real/github-pages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token, owner, repo, branch, autoFix: true }),
-      credentials: 'include',
-    });
-    const data = await res.json(); setResult(data); completeSteps(Boolean(data.ok)); setBusy(false);
+  async function deployGit() {
+    if (!token || !owner || !repo) { alert('Fill in token, owner and repo first.'); return; }
+    localStorage.setItem('gh_token', token);
+    localStorage.setItem('gh_owner', owner);
+    setStatus('building'); setLogs([]); setResult(null); setShowLogs(true);
+    log('🚀 Starting GitHub Pages deployment…');
+    try {
+      const r = await fetch(`${BASE}/api/real/github-pages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, owner, repo, branch, autoFix: true }),
+        credentials: 'include',
+      });
+      const data = await r.json();
+      (data.commands || []).forEach((c: any) => {
+        log(`$ ${c.command}`);
+        if (c.stdout) c.stdout.split('\n').filter(Boolean).forEach((l: string) => log(l));
+        if (c.stderr) c.stderr.split('\n').filter(Boolean).forEach((l: string) => log(`⚠ ${l}`));
+      });
+      if (data.ok) { log(`✅ Deployed! ${data.url}`); setStatus('success'); setResult(data); }
+      else { log(`❌ ${data.message}`); setStatus('failed'); }
+    } catch (e: any) { log(`❌ ${e.message}`); setStatus('failed'); }
   }
 
   async function deployZip() {
-    if (!canDeployZip || !zipFile) return;
-    setBusy(true); setResult(null); startSteps(true);
-    const fd = new FormData();
-    fd.set('file', zipFile);
-    fd.set('token', token);
-    fd.set('owner', owner);
-    fd.set('repo', repo || zipFile.name.replace(/\.zip$/i, ''));
-    fd.set('projectName', repo || zipFile.name.replace(/\.zip$/i, ''));
-    fd.set('branch', branch);
-    fd.set('target', zipTarget);
-    fd.set('kind', zipKind);
-    const res = await fetch('/api/real/zip', { method: 'POST', body: fd, credentials: 'include' });
-    const data = await res.json(); setResult(data); completeSteps(Boolean(data.ok)); setBusy(false);
+    const file = fileRef.current?.files?.[0];
+    if (!file) { alert('Select a ZIP file first.'); return; }
+    if (target !== 'instant' && (!token || !owner || !repo)) { alert('Fill in GitHub credentials for this target.'); return; }
+    setStatus('building'); setLogs([]); setResult(null); setShowLogs(true);
+    log(`📦 Uploading ${file.name} (${(file.size / 1024).toFixed(0)} KB)…`);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('token', token);
+      fd.append('owner', owner);
+      fd.append('repo', repo || file.name.replace('.zip', ''));
+      fd.append('projectName', projectName || file.name.replace('.zip', ''));
+      fd.append('branch', branch);
+      fd.append('target', target);
+      const r = await fetch(`${BASE}/api/real/zip`, { method: 'POST', body: fd, credentials: 'include' });
+      const data = await r.json();
+      (data.commands || []).forEach((c: any) => {
+        log(`$ ${c.command}`);
+        if (c.stdout) c.stdout.split('\n').filter(Boolean).forEach((l: string) => log(l));
+      });
+      if (data.ok) { log(`✅ Done! ${data.url || data.repoUrl}`); setStatus('success'); setResult(data); }
+      else { log(`❌ ${data.message}`); setStatus('failed'); }
+    } catch (e: any) { log(`❌ ${e.message}`); setStatus('failed'); }
   }
 
-  async function runShell() {
-    const res = await fetch('/api/system/shell', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(shell.includes(' ') ? { command: shell } : { preset: shell }),
-      credentials: 'include',
-    });
-    const data = await res.json(); setShellOut(JSON.stringify(data.result || data, null, 2));
-  }
+  const tabs: { id: Tab; label: string; icon: any }[] = [
+    { id: 'git', label: 'Git Repo', icon: Github },
+    { id: 'zip', label: 'ZIP Upload', icon: Upload },
+    { id: 'docker', label: 'Docker', icon: Box },
+    { id: 'template', label: 'Templates', icon: Zap },
+  ];
 
   return (
     <Shell>
-      <PhoneHeader title="Deploy" subtitle="Real mobile deploys" />
+      <div className="p-4 lg:p-7 max-w-3xl mx-auto animate-rise">
+        <div className="mb-6">
+          <h1 className="text-[22px] font-800 tracking-tight mb-1" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>Deploy Center</h1>
+          <p className="text-[13px]" style={{ color: '#5E6E85' }}>Auto-detect framework, build and deploy in one click.</p>
+        </div>
 
-      <section className="px-3">
-        <div className="card overflow-hidden p-4">
-          <div className="rounded-[22px] p-4 text-white" style={{ background: 'linear-gradient(135deg, #0A84FF, #0057b8)' }}>
-            <div className="flex items-center justify-between gap-3">
+        {/* Tabs */}
+        <div className="flex gap-1 p-1 rounded-[16px] mb-5" style={{ background: '#F0F3F8' }}>
+          {tabs.map(t => {
+            const Icon = t.icon;
+            return (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-[13px] text-[12.5px] font-600 transition-all ${tab === t.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Icon size={14} />{t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Git tab */}
+        {tab === 'git' && (
+          <div className="card p-5 space-y-4">
+            <div>
+              <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>GitHub Token</label>
+              <input className="field" type="password" placeholder="ghp_xxxxxxxxxxxx" value={token} onChange={e => setToken(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[.16em]" style={{ color: 'rgba(255,255,255,0.8)' }}><Sparkles size={13} /> Deploy Center</p>
-                <h2 className="mt-1 text-2xl font-black tracking-[-.04em]">Ship from repo or ZIP.</h2>
+                <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Owner / Org</label>
+                <input className="field" placeholder="username" value={owner} onChange={e => setOwner(e.target.value)} />
               </div>
-              <StatusPill tone="neutral">Live</StatusPill>
-            </div>
-            <p className="mt-3 text-sm leading-6" style={{ color: 'rgba(255,255,255,0.78)' }}>Real build commands, real logs, real URLs. Use Instant for temporary no-token static hosting.</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-3 px-3">
-        <div className="card p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-[18px]" style={{ background: '#EEF6FF', color: '#006BE6' }}><Github size={21} /></div>
-              <div className="min-w-0">
-                <h3 className="text-lg font-black tracking-[-.02em]">Project</h3>
-                <p className="text-sm leading-5" style={{ color: '#65758B' }}>Owner/token are saved in Settings.</p>
+              <div>
+                <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Repository</label>
+                <input className="field" placeholder="my-app" value={repo} onChange={e => setRepo(e.target.value)} />
               </div>
             </div>
-            <StatusPill tone={owner && token ? 'success' : 'warn'}>{owner && token ? 'Ready' : 'Setup'}</StatusPill>
-          </div>
-          <div className="mt-4">
-            <label className="text-[11px] font-black uppercase tracking-[.14em]" style={{ color: '#65758B' }}>Repo or project name</label>
-            <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="my-project" className="field mt-2" />
-            <p className="mt-2 text-xs leading-5" style={{ color: '#65758B' }}>GitHub: <b>{owner || 'not set'}</b> · Branch: <b>{branch || 'main'}</b></p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-3 px-3">
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-[18px]" style={{ background: '#ECFDF5', color: '#059669' }}><UploadCloud size={21} /></div>
-            <div><h3 className="text-lg font-black">Deploy action</h3><p className="text-sm" style={{ color: '#65758B' }}>Choose a real target.</p></div>
-          </div>
-
-          <button onClick={deployRepo} disabled={busy || !canDeployRepo} className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[20px] px-4 font-black text-white shadow-glass disabled:opacity-45" style={{ background: '#0A84FF', boxShadow: '0 10px 35px rgba(10,132,255,0.14)' }}>
-            {busy ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} />} Repo → GitHub Pages
-          </button>
-
-          <div className="my-4 flex items-center gap-3"><span className="h-px flex-1" style={{ background: '#E7ECF3' }} /><span className="text-[10px] font-black uppercase tracking-[.16em]" style={{ color: '#65758B' }}>ZIP</span><span className="h-px flex-1" style={{ background: '#E7ECF3' }} /></div>
-
-          <label className="flex min-h-[58px] cursor-pointer items-center justify-between gap-3 rounded-[22px] border border-dashed px-4 py-3" style={{ borderColor: '#93C5FD', background: 'rgba(238,246,255,0.55)' }}>
-            <div className="min-w-0">
-              <p className="font-black" style={{ color: '#07111F' }}>{zipFile ? zipFile.name : 'Choose ZIP file'}</p>
-              <p className="text-xs" style={{ color: '#65758B' }}>Static sites can use Instant URL.</p>
+            <div>
+              <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Branch</label>
+              <input className="field" placeholder="main" value={branch} onChange={e => setBranch(e.target.value)} />
             </div>
-            <FileArchive className="shrink-0" style={{ color: '#006BE6' }} />
-            <input type="file" accept=".zip,application/zip" onChange={(e) => setZipFile(e.target.files?.[0] || null)} className="hidden" />
-          </label>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <label>
-              <span className="text-[10px] font-black uppercase tracking-[.14em]" style={{ color: '#65758B' }}>Target</span>
-              <select value={zipTarget} onChange={(e) => setZipTarget(e.target.value)} className="field mt-1">
-                <option value="instant">Instant URL</option>
-                <option value="pages">GitHub Pages</option>
-                <option value="render">Render Link</option>
-              </select>
-            </label>
-            <label>
-              <span className="text-[10px] font-black uppercase tracking-[.14em]" style={{ color: '#65758B' }}>Type</span>
-              <select value={zipKind} onChange={(e) => setZipKind(e.target.value)} className="field mt-1">
-                <option value="web">Web</option>
-                <option value="static">Static</option>
-                <option value="api">API</option>
-                <option value="bot">Bot</option>
-                <option value="worker">Worker</option>
-              </select>
-            </label>
+            <button onClick={deployGit} disabled={status === 'building'}
+              className="w-full h-12 rounded-[14px] text-white font-700 text-[14px] flex items-center justify-center gap-2.5 transition-all active:scale-[0.99]"
+              style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)', boxShadow: '0 4px 16px rgba(10,132,255,0.35)' }}>
+              {status === 'building' ? <><Loader2 size={16} className="animate-spin" /> Building…</> : <><Rocket size={16} /> Deploy to GitHub Pages</>}
+            </button>
           </div>
+        )}
 
-          <button onClick={deployZip} disabled={busy || !canDeployZip} className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[20px] px-4 font-black text-white disabled:opacity-45" style={{ background: '#07111F' }}>
-            {busy ? <Loader2 className="animate-spin" size={18} /> : <FileArchive size={18} />} Deploy ZIP
-          </button>
-        </div>
-      </section>
-
-      {(steps.length > 0 || result) && (
-        <section className="mt-3 px-3">
-          <div className="card p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-black">Progress</h3>
-              <StatusPill tone={result?.ok ? 'success' : result ? 'warn' : 'info'}>{result ? (result.ok ? 'Complete' : 'Fix needed') : 'Running'}</StatusPill>
+        {/* ZIP tab */}
+        {tab === 'zip' && (
+          <div className="card p-5 space-y-4">
+            <div>
+              <label className="text-[12px] font-600 block mb-2" style={{ color: '#5E6E85' }}>Deployment Target</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([['pages', 'GitHub Pages'], ['render', 'Render Blueprint'], ['instant', 'Instant URL']] as const).map(([v, l]) => (
+                  <button key={v} onClick={() => setTarget(v)}
+                    className={`py-2.5 rounded-[12px] text-[12px] font-600 border transition ${target === v ? 'border-blue-500 text-blue-600' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                    style={target === v ? { background: '#EEF6FF' } : { background: '#fff' }}>{l}</button>
+                ))}
+              </div>
             </div>
-            <div className="mt-3 grid gap-2">
-              {steps.map((step) => (
-                <div key={step.label} className="flex items-center gap-3 rounded-[20px] px-3 py-3 text-sm" style={{ background: '#F6F8FB' }}>
-                  <StepIcon state={step.state} />
-                  <span className="font-bold">{step.label}</span>
+            <div>
+              <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>ZIP File</label>
+              <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed rounded-[16px] p-8 text-center cursor-pointer hover:border-blue-400 transition" style={{ borderColor: '#CBD5E1' }}>
+                <Upload size={22} color="#8E9BAD" className="mx-auto mb-2" />
+                <div className="text-[13px] font-600" style={{ color: '#5E6E85' }}>
+                  {fileRef.current?.files?.[0] ? fileRef.current.files[0].name : 'Click to select ZIP file'}
                 </div>
-              ))}
+                <div className="text-[11px] mt-1" style={{ color: '#8E9BAD' }}>Max 75MB</div>
+              </div>
+              <input ref={fileRef} type="file" accept=".zip" className="hidden" onChange={() => setProjectName(fileRef.current?.files?.[0]?.name.replace('.zip', '') || '')} />
             </div>
-            {result && <ResultCard result={result} />}
-            {commands.length > 0 && <CommandLogs commands={commands} />}
+            {target !== 'instant' && (
+              <>
+                <div>
+                  <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>GitHub Token</label>
+                  <input className="field" type="password" placeholder="ghp_xxxxxxxxxxxx" value={token} onChange={e => setToken(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Owner</label>
+                    <input className="field" placeholder="username" value={owner} onChange={e => setOwner(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Repo</label>
+                    <input className="field" placeholder="my-app" value={repo} onChange={e => setRepo(e.target.value)} />
+                  </div>
+                </div>
+              </>
+            )}
+            <button onClick={deployZip} disabled={status === 'building'}
+              className="w-full h-12 rounded-[14px] text-white font-700 text-[14px] flex items-center justify-center gap-2.5 transition-all active:scale-[0.99]"
+              style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)', boxShadow: '0 4px 16px rgba(10,132,255,0.35)' }}>
+              {status === 'building' ? <><Loader2 size={16} className="animate-spin" /> Deploying…</> : <><Upload size={16} /> Deploy ZIP</>}
+            </button>
           </div>
-        </section>
-      )}
+        )}
 
-      <section className="mt-3 px-3 pb-6">
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-[18px]" style={{ background: '#EEF6FF', color: '#006BE6' }}><TerminalSquare size={21} /></div>
-            <div><h3 className="text-lg font-black">Linux operations</h3><p className="text-sm" style={{ color: '#65758B' }}>Docker container tools.</p></div>
-          </div>
-          <input value={shell} onChange={(e) => setShell(e.target.value)} className="field mt-4" placeholder="doctor, repair, network, files" />
-          <button onClick={runShell} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[20px] font-black" style={{ background: '#F6F8FB', color: '#07111F' }}>
-            <ServerCog size={18} /> Run command
-          </button>
-          {shellOut && <pre className="mt-3 max-h-80 overflow-auto rounded-[22px] p-4 text-xs leading-5 text-white whitespace-pre-wrap" style={{ background: '#07111F' }}>{shellOut}</pre>}
-        </div>
-      </section>
-    </Shell>
-  );
-}
-
-function StepIcon({ state }: { state: DeployStep['state'] }) {
-  if (state === 'active') return <Loader2 className="animate-spin" size={18} style={{ color: '#006BE6' }} />;
-  if (state === 'error') return <AlertCircle size={18} style={{ color: '#D97706' }} />;
-  if (state === 'done') return <CheckCircle2 size={18} style={{ color: '#059669' }} />;
-  return <span className="h-[18px] w-[18px] rounded-full border-2" style={{ borderColor: '#E7ECF3' }} />;
-}
-
-function ResultCard({ result }: { result: DeployResult }) {
-  return (
-    <div className="mt-3 rounded-[22px] p-4" style={{ background: result.ok ? '#ECFDF5' : '#FFFBEB', color: result.ok ? '#059669' : '#D97706' }}>
-      <p className="font-black leading-6">{result.message}</p>
-      {result.recommendation && (
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-          <Mini label="Stack" value={result.recommendation.framework} />
-          <Mini label="Install" value={result.recommendation.installCommand} />
-          <Mini label="Build" value={result.recommendation.buildCommand} />
-          <Mini label="Output" value={result.recommendation.outputDirectory} />
-        </div>
-      )}
-      {result.url && <OutLink href={result.url} label="Open public URL" />}
-      {result.repoUrl && <OutLink href={result.repoUrl} label="Open GitHub repo" />}
-      {result.renderDeployUrl && <OutLink href={result.renderDeployUrl} label="Open Render deploy" />}
-    </div>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[16px] p-3" style={{ background: 'rgba(255,255,255,0.75)' }}>
-      <p className="font-bold opacity-70">{label}</p>
-      <p className="mt-1 truncate font-black">{value}</p>
-    </div>
-  );
-}
-
-function OutLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a className="mt-3 flex min-h-[44px] items-center justify-between rounded-[16px] px-4 font-black text-white" href={href} target="_blank" rel="noopener noreferrer" style={{ background: '#0A84FF' }}>
-      <span>{label}</span><ExternalLink size={16} />
-    </a>
-  );
-}
-
-function CommandLogs({ commands }: { commands: CommandLog[] }) {
-  return (
-    <details className="mt-3">
-      <summary className="cursor-pointer rounded-[18px] px-4 py-3 font-black" style={{ background: '#F6F8FB' }}>Command logs</summary>
-      <div className="mt-3 space-y-2">
-        {commands.map((cmd, i) => (
-          <div key={`${cmd.command}-${i}`} className="overflow-hidden rounded-[20px] text-white" style={{ background: '#07111F' }}>
-            <div className="flex items-center justify-between gap-3 px-3 py-2 text-[11px]" style={{ background: 'rgba(255,255,255,0.10)' }}>
-              <span className="truncate font-bold">{cmd.command}</span>
-              <span style={{ color: cmd.code === 0 ? '#6EE7B7' : '#FCD34D' }}>{cmd.code}</span>
+        {/* Docker tab */}
+        {tab === 'docker' && (
+          <div className="card p-5 space-y-4">
+            <div>
+              <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Docker Image</label>
+              <input className="field" placeholder="nginx:latest or ghcr.io/user/app:tag" />
             </div>
-            <pre className="max-h-56 overflow-auto whitespace-pre-wrap p-3 text-[11px] leading-5">{[cmd.stdout, cmd.stderr].filter(Boolean).join('\n') || 'No output.'}</pre>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Container Name</label>
+                <input className="field" placeholder="my-container" />
+              </div>
+              <div>
+                <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Port</label>
+                <input className="field" placeholder="3000" type="number" />
+              </div>
+            </div>
+            <div>
+              <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Environment Variables</label>
+              <textarea className="field h-24 py-3 resize-none" placeholder="KEY=value&#10;ANOTHER=value" style={{ height: 96 }} />
+            </div>
+            <button className="w-full h-12 rounded-[14px] text-white font-700 text-[14px] flex items-center justify-center gap-2.5" style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)', boxShadow: '0 4px 16px rgba(10,132,255,0.35)' }}>
+              <Box size={16} /> Pull & Run Container
+            </button>
           </div>
-        ))}
+        )}
+
+        {/* Templates tab */}
+        {tab === 'template' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {TEMPLATES.map(t => (
+              <div key={t.id} className="card card-hover p-4 cursor-pointer">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-2xl">{t.icon}</span>
+                  <div>
+                    <div className="text-[13.5px] font-700" style={{ color: '#0A0F1E' }}>{t.name}</div>
+                    <div className="text-[12px]" style={{ color: '#8E9BAD' }}>{t.desc}</div>
+                  </div>
+                </div>
+                <div className="text-[11px] font-500 px-2.5 py-1.5 rounded-[8px] font-mono" style={{ background: '#F0F3F8', color: '#5E6E85' }}>{t.cmd}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Build logs */}
+        {showLogs && (
+          <div className="mt-5">
+            <button onClick={() => setShowLogs(v => !v)} className="w-full flex items-center justify-between px-4 py-3 rounded-[14px] mb-2 transition hover:opacity-80" style={{ background: '#0A0F1E' }}>
+              <div className="flex items-center gap-2">
+                <Terminal size={14} color="#E2E8F2" />
+                <span className="text-[12.5px] font-700" style={{ color: '#E2E8F2' }}>Build Output</span>
+                {status !== 'idle' && <StatusPill status={status === 'building' ? 'building' : status === 'success' ? 'success' : 'failed'} />}
+              </div>
+              {showLogs ? <ChevronUp size={14} color="#8E9BAD" /> : <ChevronDown size={14} color="#8E9BAD" />}
+            </button>
+            <div className="log-block max-h-72 overflow-y-auto">
+              {logs.map((l, i) => <div key={i}>{l}</div>)}
+              {status === 'building' && <div className="flex items-center gap-2 mt-1"><Loader2 size={12} className="animate-spin" color="#60A5FA" /> Processing…</div>}
+            </div>
+          </div>
+        )}
+
+        {/* Result */}
+        {result?.ok && (
+          <div className="mt-4 card p-4" style={{ border: '1.5px solid #30D158', background: '#EDFAF2' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 size={16} color="#30D158" />
+              <span className="text-[13px] font-700" style={{ color: '#1A7A3C' }}>Deployment successful!</span>
+            </div>
+            {result.url && (
+              <a href={result.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[13px] font-600" style={{ color: '#0A84FF' }}>
+                {result.url} <ExternalLink size={13} />
+              </a>
+            )}
+            {result.renderDeployUrl && (
+              <a href={result.renderDeployUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[13px] font-600 mt-2" style={{ color: '#0A84FF' }}>
+                Deploy on Render → <ExternalLink size={13} />
+              </a>
+            )}
+            {result.recommendation && (
+              <div className="mt-3 text-[11.5px] space-y-1" style={{ color: '#2D6A4F' }}>
+                <div>Framework: <strong>{result.recommendation.framework}</strong></div>
+                <div>Build: <code>{result.recommendation.buildCommand}</code></div>
+                <div>Output: <code>{result.recommendation.outputDirectory}</code></div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-    </details>
+    </Shell>
   );
 }

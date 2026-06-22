@@ -1,130 +1,120 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, KeyRound, Save, ShieldCheck, TerminalSquare } from 'lucide-react';
-import { PhoneHeader } from '@/components/PhoneHeader';
 import { Shell } from '@/components/Shell';
-import { StatusPill } from '@/components/StatusPill';
+import { Save, KeyRound, Shield, Bell, User, Palette, Terminal, ExternalLink, CheckCircle2 } from 'lucide-react';
 
-const credentials = [
-  { name: 'GitHub fine-grained token', url: 'https://github.com/settings/personal-access-tokens', use: 'Required for GitHub Pages and Render Blueprint repo preparation.', perms: 'Selected repos. Contents read/write, Pages read/write, Metadata read.' },
-  { name: 'Render dashboard', url: 'https://dashboard.render.com/', use: 'Host Nezora itself and deploy prepared Blueprint projects.', perms: 'No Render API key needed for the deploy-link flow.' },
-  { name: 'Render API key', url: 'https://dashboard.render.com/account/api-keys', use: 'Optional future direct Render automation.', perms: 'Create from Account Settings.' },
-  { name: 'Cloudflare API token', url: 'https://dash.cloudflare.com/profile/api-tokens', use: 'Optional DNS/Pages automation with your own domain.', perms: 'Least privilege: Pages edit, DNS edit for selected zone.' },
-  { name: 'Vercel token', url: 'https://vercel.com/account/tokens', use: 'Optional direct Next.js/frontend deployments.', perms: 'Limit team scope where possible.' },
-  { name: 'Koyeb API token', url: 'https://app.koyeb.com/account/api', use: 'Optional service/API adapter.', perms: 'Account API settings.' },
-  { name: 'UptimeRobot', url: 'https://uptimerobot.com/', use: 'Free URL monitoring alerts.', perms: 'Free account.' },
-  { name: 'cron-job.org', url: 'https://cron-job.org/', use: 'Scheduled HTTP pings for health endpoints.', perms: 'Use responsibly within provider rules.' },
-];
-
-export default function SettingsPage() {
-  const [owner, setOwner] = useState('');
-  const [branch, setBranch] = useState('main');
-  const [token, setToken] = useState('');
+export default function Settings() {
+  const [ghToken, setGhToken] = useState('');
+  const [ghOwner, setGhOwner] = useState('');
+  const [adminToken, setAdminToken] = useState('');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setOwner(localStorage.getItem('nezora.githubOwner') || '');
-    setBranch(localStorage.getItem('nezora.defaultBranch') || 'main');
-    setToken(localStorage.getItem('nezora.githubToken') || '');
+    setGhToken(localStorage.getItem('gh_token') || '');
+    setGhOwner(localStorage.getItem('gh_owner') || '');
   }, []);
 
   function save() {
-    localStorage.setItem('nezora.githubOwner', owner.trim());
-    localStorage.setItem('nezora.defaultBranch', branch.trim() || 'main');
-    localStorage.setItem('nezora.githubToken', token.trim());
-    setSaved(true); setTimeout(() => setSaved(false), 1800);
+    localStorage.setItem('gh_token', ghToken);
+    localStorage.setItem('gh_owner', ghOwner);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
   }
+
+  const sections = [
+    {
+      title: 'GitHub Integration',
+      icon: KeyRound,
+      color: '#0A84FF',
+      content: (
+        <div className="space-y-4">
+          <div>
+            <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Personal Access Token</label>
+            <input className="field" type="password" placeholder="ghp_xxxxxxxxxxxx" value={ghToken} onChange={e => setGhToken(e.target.value)} />
+            <p className="text-[11px] mt-1.5" style={{ color: '#8E9BAD' }}>Needs: repo, workflow, pages permissions</p>
+          </div>
+          <div>
+            <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>Default Owner / Username</label>
+            <input className="field" placeholder="your-github-username" value={ghOwner} onChange={e => setGhOwner(e.target.value)} />
+          </div>
+          <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-600" style={{ color: '#0A84FF' }}>
+            Generate token on GitHub <ExternalLink size={12} />
+          </a>
+        </div>
+      ),
+    },
+    {
+      title: 'Admin Security',
+      icon: Shield,
+      color: '#30D158',
+      content: (
+        <div className="space-y-3">
+          <div className="px-4 py-3 rounded-[14px]" style={{ background: '#EDFAF2', border: '1px solid #A8EDC0' }}>
+            <div className="text-[12.5px] font-600" style={{ color: '#1A7A3C' }}>Single-owner mode active</div>
+            <div className="text-[12px] mt-0.5" style={{ color: '#2D6A4F' }}>Only requests with the correct ADMIN_TOKEN are accepted.</div>
+          </div>
+          <div>
+            <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>ADMIN_TOKEN (server env var)</label>
+            <input className="field" type="password" placeholder="Set in Render environment variables" disabled style={{ background: '#F5F8FC', cursor: 'not-allowed' }} />
+            <p className="text-[11px] mt-1.5" style={{ color: '#8E9BAD' }}>Set ADMIN_TOKEN in your Render service environment — never expose in client code.</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: 'Platform Info',
+      icon: Terminal,
+      color: '#5E5CE6',
+      content: (
+        <div className="space-y-2.5">
+          {[
+            ['Platform', "Danny's Cloud OS v2"],
+            ['Stack', 'Vite + React + Express 5'],
+            ['Node.js', process.env.NODE_ENV || 'development'],
+            ['Build Engine', 'esbuild + auto-detect'],
+            ['AI Backend', 'Groq (free LLM)'],
+          ].map(([k, v]) => (
+            <div key={k} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: '#F0F3F8' }}>
+              <span className="text-[12.5px]" style={{ color: '#5E6E85' }}>{k}</span>
+              <span className="text-[12.5px] font-600" style={{ color: '#0A0F1E' }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <Shell>
-      <PhoneHeader title="Settings" subtitle="Saved deploy profile" />
-
-      <section className="px-5">
-        <div className="rounded-[32px] bg-white p-5 shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: '#006BE6' }}>Deploy profile</p>
-              <h2 className="mt-1 text-2xl font-black tracking-[-0.04em]">Put your GitHub details once.</h2>
-            </div>
-            <StatusPill tone={saved ? 'success' : 'info'}>{saved ? 'Saved' : 'Local'}</StatusPill>
+      <div className="p-4 lg:p-7 max-w-3xl mx-auto animate-rise">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-[22px] font-800 tracking-tight mb-0.5" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>Settings</h1>
+            <p className="text-[13px]" style={{ color: '#5E6E85' }}>Configure your Cloud OS preferences</p>
           </div>
-          <p className="mt-2 text-sm leading-6" style={{ color: '#65758B' }}>After this, the plus Deploy Center only needs the repository name for GitHub flows. These values are saved in your browser on your private device.</p>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <Field label="GitHub username/org" value={owner} set={setOwner} hint="daviddan-241" />
-            <Field label="Default branch" value={branch} set={setBranch} hint="main" />
-            <label className="col-span-2 block">
-              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#65758B' }}>GitHub token</span>
-              <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="fine-grained PAT" className="mt-1 h-12 w-full rounded-2xl border px-3 text-sm outline-none focus:border-blue-500" style={{ borderColor: '#E7ECF3' }} />
-            </label>
-          </div>
-          <button onClick={save} className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-3xl font-black text-white" style={{ background: '#0A84FF' }}><Save size={18} /> Save deploy profile</button>
+          <button onClick={save} className="flex items-center gap-2 px-4 py-2.5 rounded-[13px] text-[13px] font-700 text-white transition-all active:scale-[0.98]"
+            style={{ background: saved ? '#30D158' : 'linear-gradient(135deg,#0A84FF,#5E5CE6)', boxShadow: '0 4px 12px rgba(10,132,255,0.3)' }}>
+            {saved ? <><CheckCircle2 size={14} /> Saved!</> : <><Save size={14} /> Save</>}
+          </button>
         </div>
-      </section>
 
-      <section className="mt-5 px-5">
-        <div className="rounded-[32px] p-5 text-white shadow-soft" style={{ background: '#07111F', boxShadow: '0 18px 50px rgba(7,17,31,0.08)' }}>
-          <StatusPill tone="success">No-token option</StatusPill>
-          <h3 className="mt-4 text-xl font-black">Instant Temporary URL</h3>
-          <p className="mt-2 text-sm leading-6" style={{ color: 'rgba(255,255,255,0.70)' }}>ZIP static/frontend projects can be hosted directly by your Nezora Render container without any provider API. This is temporary container storage: it can disappear if Render restarts, redeploys or clears the instance.</p>
-        </div>
-      </section>
-
-      <section className="mt-5 px-5">
-        <div className="rounded-[32px] bg-white p-5 shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-          <div className="flex items-center gap-3">
-            <ShieldCheck style={{ color: '#059669' }} />
-            <div>
-              <h3 className="text-xl font-black">No-API fallback methods</h3>
-              <p className="text-sm" style={{ color: '#65758B' }}>These are real workflows with clear limits.</p>
-            </div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {[
-              ['Instant Temporary URL', 'No API/account for static ZIP previews; stored on the running Nezora container for a limited time.'],
-              ['Render Deploy Button', 'Nezora generates render.yaml and a Render deploy link; you confirm in Render.'],
-              ['Dockerfile export', 'This platform has a production Dockerfile for any Docker host.'],
-            ].map(([title, desc]) => (
-              <div key={title} className="rounded-3xl p-4" style={{ background: '#F6F8FB' }}>
-                <p className="font-black">{title}</p>
-                <p className="mt-1 text-sm leading-5" style={{ color: '#65758B' }}>{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-5 space-y-3 px-5">
-        {credentials.map((item) => (
-          <a key={item.name} href={item.url} target="_blank" rel="noopener noreferrer" className="block rounded-[30px] bg-white p-4 shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex gap-3">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl" style={{ background: '#EEF6FF', color: '#006BE6' }}><KeyRound /></div>
-                <div>
-                  <h2 className="font-black">{item.name}</h2>
-                  <p className="mt-1 text-sm leading-5" style={{ color: '#65758B' }}>{item.use}</p>
-                  <p className="mt-2 text-xs font-bold leading-5" style={{ color: '#07111F' }}>{item.perms}</p>
+        <div className="space-y-4">
+          {sections.map(s => {
+            const Icon = s.icon;
+            return (
+              <div key={s.title} className="card p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: `${s.color}18` }}>
+                    <Icon size={16} style={{ color: s.color }} />
+                  </div>
+                  <span className="text-[14px] font-700" style={{ color: '#0A0F1E' }}>{s.title}</span>
                 </div>
+                {s.content}
               </div>
-              <ExternalLink className="shrink-0" style={{ color: '#006BE6' }} />
-            </div>
-          </a>
-        ))}
-      </section>
-
-      <section className="mt-5 px-5 pb-6">
-        <div className="rounded-[32px] bg-white p-5 shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-          <div className="flex items-center gap-3"><TerminalSquare style={{ color: '#006BE6' }} /><h3 className="text-xl font-black">Render Docker env</h3></div>
-          <pre className="mt-4 overflow-auto rounded-3xl p-4 text-xs leading-5" style={{ background: '#F6F8FB' }}>{`ADMIN_TOKEN=your-private-login-token\nALLOW_SHELL=false\nNEZORA_BASE_DOMAIN=your-domain-if-you-own-one`}</pre>
+            );
+          })}
         </div>
-      </section>
+      </div>
     </Shell>
-  );
-}
-
-function Field({ label, value, set, hint }: { label: string; value: string; set: (v: string) => void; hint: string }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#65758B' }}>{label}</span>
-      <input value={value} onChange={(e) => set(e.target.value)} placeholder={hint} className="mt-1 h-12 w-full rounded-2xl border px-3 text-sm outline-none focus:border-blue-500" style={{ borderColor: '#E7ECF3' }} />
-    </label>
   );
 }

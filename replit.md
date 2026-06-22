@@ -1,59 +1,62 @@
-# Nezora Deploy
+# Danny's Cloud OS
 
-A mobile-first multi-cloud deployment control panel — deploy projects to Render, GitHub Pages, and other providers via ZIP upload or GitHub repo.
+A personal private cloud operating system — deploy, monitor, and manage your entire infrastructure from one place. Deploy from Git, ZIP, Docker, or templates. AI assistant for analysis and Dockerfile generation. Real-time monitoring, domain management, databases, storage, and automation.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
 - `pnpm --filter @workspace/nezora run dev` — run the frontend (port 25611)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks from OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Optional env: `GROQ_API_KEY` — Groq free LLM for AI assistant (falls back to HuggingFace then local)
+- Optional env: `ADMIN_TOKEN` — Admin auth token (default: any token accepted)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - Frontend: React + Vite + Tailwind v4 (artifact: `artifacts/nezora`)
 - API: Express 5 (artifact: `artifacts/api-server`)
-- DB: PostgreSQL + Drizzle ORM
+- DB: PostgreSQL + Drizzle ORM (optional; project/domain/db data stored in `/tmp/nezora-data`)
 - Routing: wouter (frontend), Express 5 router (backend)
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec at `artifacts/api-spec/openapi.yaml`)
-- Build: esbuild (CJS bundle for API)
+- AI: Groq API (llama-3.3-70b-versatile) → HuggingFace fallback → local smart responses
 - File uploads: `express-fileupload` + `adm-zip`
 
 ## Where things live
 
-- `artifacts/nezora/src/pages/` — all frontend pages (Home, Login, Deploy, Deployments, Providers, Limits, Settings, Admin)
-- `artifacts/nezora/src/components/` — Shell layout, PhoneHeader, StatusPill, shadcn/ui components
-- `artifacts/nezora/src/index.css` — design tokens (colors: ink, muted, line, cloud; blue=#0A84FF; shadows: soft, glass)
-- `artifacts/api-server/src/routes/` — Express routes (auth, providers, limits, deploy, shell, static-serve)
-- `artifacts/api-server/src/lib/auth-guard.ts` — cookie-based auth middleware (`nezora_admin` cookie)
-- `artifacts/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contract)
+- `artifacts/nezora/src/pages/` — all 18 pages (Home, Deploy, Projects, AI, Monitoring, Logs, Domains, Databases, Storage, Containers, Templates, Automation, Settings, Providers, Limits, Deployments, Admin, Login)
+- `artifacts/nezora/src/components/Shell.tsx` — collapsible sidebar + top bar layout
+- `artifacts/nezora/src/index.css` — design tokens (Apple-inspired glassmorphism)
+- `artifacts/api-server/src/routes/` — Express routes (system, projects, ai, domains, databases, storage, deploy, auth, limits, shell, static-serve)
+- `artifacts/api-server/src/lib/auth-guard.ts` — cookie + header auth middleware
 
 ## Architecture decisions
 
-- Migrated from Next.js (v0/Vercel) to Replit pnpm monorepo stack (Vite + Express 5)
+- Control Plane + pluggable Runtime Provider model — platform handles orchestration, provider handles compute
 - Express 5 with path-to-regexp v8 requires `{/*path}` wildcard syntax (not `*` or `/:param(*)`)
-- Auth uses a simple `nezora_admin` cookie; no JWT or session store
-- Static site hosting at `/s/:slug{/*path}` serves ZIP-uploaded sites from `LOCAL_SITE_ROOT`
-- Tailwind v4 via `@tailwindcss/vite` plugin — no `tailwind.config.js` needed
+- Project/domain/database data persisted as JSON in `NEZORA_DATA_DIR` (/tmp/nezora-data by default)
+- AI: GROQ_API_KEY → HuggingFace Inference API → local smart responses (no key required to use)
+- Auth: `nezora_admin` cookie or `x-nezora-admin-token` header; single-owner mode
+- Sidebar is collapsible on desktop, slide-over on mobile
 
 ## Product
 
-Nezora Deploy lets users connect cloud providers (Render, GitHub), upload ZIP archives or connect GitHub repos, and deploy static sites or API services. It includes a deployment history view, provider management, usage limits, settings, and an admin panel.
+Danny's Cloud OS is a personal private cloud control plane. You connect your GitHub account, upload ZIPs or paste repo URLs, and the platform auto-detects framework, builds, and deploys. Includes: Deploy Center (Git/ZIP/Docker/Templates), AI Assistant, real-time monitoring with live metrics, projects management, domain + SSL, databases, storage, containers, automation workflows, and a logs viewer.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Platform name: Danny's Cloud OS (v2)
+- AI: use free LLMs (Groq free tier, HuggingFace fallback)
+- Self-hosted on Render (no external API dependencies required)
+- Mobile-first design, Apple-inspired glassmorphism
 
 ## Gotchas
 
-- Express 5 path-to-regexp v8: wildcard routes must use `{/*param}` syntax, not `/*` or `/:param(*)`
+- Express 5 path-to-regexp v8: wildcard routes must use `{/*param}` syntax
 - Always run `pnpm --filter @workspace/api-spec run codegen` after changing `openapi.yaml`
 - `express-fileupload` file is accessed as `req.files?.file` (typed as `UploadedFile`)
+- System stats (CPU/RAM) read from /proc/stat and `free` — works on Linux/Replit, not macOS
 
 ## Pointers
 

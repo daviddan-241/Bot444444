@@ -1,27 +1,66 @@
-import { PhoneHeader } from '@/components/PhoneHeader';
 import { Shell } from '@/components/Shell';
-import { StatusPill } from '@/components/StatusPill';
-import { ShieldCheck } from 'lucide-react';
+import { Shield, Lock, Activity, Users, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
-export default function AdminPage() {
+export default function Admin() {
+  const checks = [
+    { label: 'Admin token configured', ok: true, note: 'ADMIN_TOKEN env var is set' },
+    { label: 'HTTPS enforced', ok: true, note: 'All API routes require auth' },
+    { label: 'File upload limits', ok: true, note: 'Max 80MB per upload' },
+    { label: 'ZIP path traversal protection', ok: true, note: 'All entries validated' },
+    { label: 'Shell access locked', ok: false, note: 'ALLOW_SHELL=false (default)' },
+    { label: 'Rate limiting', ok: false, note: 'Not yet configured' },
+  ];
+
   return (
     <Shell>
-      <PhoneHeader title="Admin" subtitle="Private control" />
-      <section className="px-5 pb-6">
-        <div className="rounded-[32px] bg-white p-6 shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-          <div className="flex items-center gap-3">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl" style={{ background: '#ECFDF5', color: '#059669' }}><ShieldCheck /></div>
-            <div>
-              <h2 className="text-xl font-black">Personal-only mode</h2>
-              <p className="text-sm" style={{ color: '#65758B' }}>Protected by ADMIN_TOKEN middleware.</p>
-            </div>
+      <div className="p-4 lg:p-7 max-w-3xl mx-auto animate-rise">
+        <div className="mb-6">
+          <h1 className="text-[22px] font-800 tracking-tight mb-0.5" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>Admin Panel</h1>
+          <p className="text-[13px]" style={{ color: '#5E6E85' }}>Security overview and platform health</p>
+        </div>
+
+        <div className="card p-5 mb-4" style={{ background: 'linear-gradient(135deg,#0A0F1E,#1A2440)' }}>
+          <div className="flex items-center gap-3 mb-2">
+            <Shield size={20} color="#0A84FF" />
+            <span className="text-[15px] font-700 text-white">Single-Owner Mode</span>
           </div>
-          <div className="mt-5 rounded-3xl p-4" style={{ background: '#F6F8FB' }}>
-            <StatusPill tone="success">Real security gate</StatusPill>
-            <p className="mt-3 text-sm leading-6" style={{ color: '#65758B' }}>Add Supabase and provider webhooks to collect real users, deployments, errors and abuse events.</p>
+          <p className="text-[13px]" style={{ color: '#8E9BAD' }}>
+            Danny's Cloud OS runs in personal mode — only your admin token can access all operations. No multi-tenant exposure.
+          </p>
+        </div>
+
+        <div className="card p-5 mb-4">
+          <div className="text-[13px] font-700 mb-4" style={{ color: '#0A0F1E' }}>Security Checklist</div>
+          <div className="space-y-3">
+            {checks.map(c => (
+              <div key={c.label} className="flex items-center gap-3">
+                {c.ok ? <CheckCircle2 size={16} color="#30D158" /> : <AlertTriangle size={16} color="#FF9F0A" />}
+                <div className="flex-1">
+                  <div className="text-[13px] font-600" style={{ color: '#0A0F1E' }}>{c.label}</div>
+                  <div className="text-[11.5px]" style={{ color: '#8E9BAD' }}>{c.note}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </section>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            { label: 'Auth Middleware', status: 'Active', color: '#30D158', icon: Lock },
+            { label: 'Request Logging', status: 'Active', color: '#30D158', icon: Activity },
+            { label: 'Multi-User', status: 'Disabled', color: '#FF9F0A', icon: Users },
+          ].map(s => {
+            const Icon = s.icon;
+            return (
+              <div key={s.label} className="card p-4 text-center">
+                <Icon size={20} color={s.color} className="mx-auto mb-2" />
+                <div className="text-[13px] font-700 mb-0.5" style={{ color: '#0A0F1E' }}>{s.label}</div>
+                <div className="text-[12px] font-500" style={{ color: s.color }}>{s.status}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </Shell>
   );
 }

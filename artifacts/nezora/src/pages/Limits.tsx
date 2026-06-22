@@ -1,90 +1,105 @@
-import { useState } from 'react';
-import { ExternalLink, Gauge, ShieldAlert } from 'lucide-react';
-import { PhoneHeader } from '@/components/PhoneHeader';
+import { useEffect, useState } from 'react';
 import { Shell } from '@/components/Shell';
-import { StatusPill } from '@/components/StatusPill';
+import { Gauge, RefreshCw, AlertTriangle, CheckCircle2, ExternalLink } from 'lucide-react';
 
-export default function LimitsPage() {
-  const [token, setToken] = useState('');
+export default function Limits() {
+  const [token, setToken] = useState(() => localStorage.getItem('gh_token') || '');
   const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   async function check() {
-    const res = await fetch('/api/real/limits', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ githubToken: token }),
-      credentials: 'include',
-    });
-    setData(await res.json());
+    if (!token) return;
+    setLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/real/limits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+        credentials: 'include',
+      });
+      if (r.ok) setData(await r.json());
+    } catch {}
+    setLoading(false);
   }
+
+  useEffect(() => { if (token) check(); }, []);
+
+  const rate = data?.github?.rate;
+  const pct = rate ? Math.round((rate.remaining / rate.limit) * 100) : null;
 
   return (
     <Shell>
-      <PhoneHeader title="Limits" subtitle="Real quota guard" />
-      <section className="px-5">
-        <div className="rounded-[32px] bg-white p-5 shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-          <div className="flex items-center gap-3">
-            <Gauge style={{ color: '#006BE6' }} />
-            <div>
-              <h2 className="text-xl font-black">Provider limit monitor</h2>
-              <p className="text-sm" style={{ color: '#65758B' }}>Checks official provider signals. It will not bypass free-tier rules.</p>
-            </div>
+      <div className="p-4 lg:p-7 max-w-3xl mx-auto animate-rise">
+        <div className="mb-6">
+          <h1 className="text-[22px] font-800 tracking-tight mb-0.5" style={{ letterSpacing: '-0.03em', color: '#0A0F1E' }}>API Limits</h1>
+          <p className="text-[13px]" style={{ color: '#5E6E85' }}>Monitor provider rate limits to avoid service disruptions</p>
+        </div>
+
+        <div className="card p-5 mb-5">
+          <label className="text-[12px] font-600 block mb-1.5" style={{ color: '#5E6E85' }}>GitHub Token</label>
+          <div className="flex gap-3">
+            <input className="field flex-1" type="password" placeholder="ghp_xxxxxxxxxxxx" value={token} onChange={e => setToken(e.target.value)} />
+            <button onClick={check} disabled={loading || !token}
+              className="flex items-center gap-2 px-4 rounded-[14px] text-[13px] font-700 text-white flex-shrink-0 transition"
+              style={{ background: 'linear-gradient(135deg,#0A84FF,#5E5CE6)' }}>
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Gauge size={14} />}
+              Check
+            </button>
           </div>
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="GitHub token to check real rate limit"
-            className="mt-4 h-14 w-full rounded-3xl border px-4 outline-none focus:border-blue-500"
-            style={{ borderColor: '#E7ECF3' }}
-          />
-          <button onClick={check} className="mt-3 h-14 w-full rounded-3xl font-black text-white" style={{ background: '#0A84FF' }}>Check real limits</button>
         </div>
-      </section>
 
-      {data?.limits?.length > 0 && (
-        <section className="mt-5 space-y-3 px-5">
-          {data.limits.map((l: any) => (
-            <div key={l.provider + l.metric} className="rounded-[30px] bg-white p-4 shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-black">{l.provider}</h3>
-                  <p className="text-sm" style={{ color: '#65758B' }}>{l.metric}</p>
+        {data && (
+          <div className="space-y-4 animate-rise">
+            {rate && (
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🐙</span>
+                    <div>
+                      <div className="text-[14px] font-700" style={{ color: '#0A0F1E' }}>GitHub REST API</div>
+                      <div className="text-[12px]" style={{ color: '#8E9BAD' }}>Core rate limit</div>
+                    </div>
+                  </div>
+                  {(pct ?? 0) > 20
+                    ? <CheckCircle2 size={18} color="#30D158" />
+                    : <AlertTriangle size={18} color="#FF9F0A" />}
                 </div>
-                <StatusPill tone={l.state === 'ok' ? 'success' : l.state === 'critical' ? 'warn' : 'info'}>{l.state}</StatusPill>
+                <div className="flex justify-between text-[12px] mb-2" style={{ color: '#5E6E85' }}>
+                  <span>{rate.remaining.toLocaleString()} remaining</span>
+                  <span>{rate.limit.toLocaleString()} limit</span>
+                </div>
+                <div className="metric-bar mb-3">
+                  <div className="metric-bar-fill" style={{ width: `${pct}%`, background: (pct ?? 0) > 50 ? '#30D158' : (pct ?? 0) > 20 ? '#FF9F0A' : '#FF453A' }} />
+                </div>
+                <div className="text-[12px]" style={{ color: '#8E9BAD' }}>
+                  Resets at {new Date(rate.reset * 1000).toLocaleTimeString()}
+                </div>
               </div>
-              {typeof l.remaining === 'number' && (
-                <div className="mt-4 h-3 rounded-full" style={{ background: '#F6F8FB' }}>
-                  <div className="h-3 rounded-full" style={{ width: `${Math.max(4, Math.min(100, (l.remaining / l.limit) * 100))}%`, background: '#0A84FF' }} />
-                </div>
-              )}
-              <p className="mt-3 text-sm leading-6" style={{ color: '#65758B' }}>{l.note}</p>
-              <p className="mt-2 text-sm font-bold" style={{ color: '#07111F' }}>Action: {l.action}</p>
-            </div>
-          ))}
-        </section>
-      )}
+            )}
 
-      <section className="mt-5 px-5">
-        <div className="rounded-[32px] p-5 ring-1" style={{ background: '#FFFBEB', color: '#D97706', outline: '1px solid #FDE68A' }}>
-          <ShieldAlert />
-          <h3 className="mt-3 text-lg font-black">No account-limit evasion</h3>
-          <p className="mt-2 text-sm leading-6">Nezora can alert, pause, clean up, and fail over to providers you legitimately connect. It cannot auto-create new third-party accounts to bypass free-tier limits or provider terms.</p>
-        </div>
-      </section>
+            {data.policies && (
+              <div className="card p-5">
+                <div className="text-[13px] font-700 mb-3" style={{ color: '#0A0F1E' }}>Ethical Limit Policies</div>
+                {data.policies.map((p: string, i: number) => (
+                  <div key={i} className="flex items-start gap-2.5 py-2 border-b last:border-0" style={{ borderColor: '#F0F3F8' }}>
+                    <CheckCircle2 size={13} color="#30D158" className="mt-0.5 flex-shrink-0" />
+                    <span className="text-[12.5px]" style={{ color: '#3D4D63' }}>{p}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-      <section className="mt-5 space-y-3 px-5 pb-6">
-        {[
-          ['Render usage/dashboard', 'https://dashboard.render.com/'],
-          ['GitHub tokens', 'https://github.com/settings/personal-access-tokens'],
-          ['UptimeRobot free monitors', 'https://uptimerobot.com/'],
-          ['cron-job.org scheduled pings', 'https://cron-job.org/'],
-        ].map(([title, href]) => (
-          <a key={title} href={href} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-[28px] bg-white p-4 font-black shadow-soft ring-1" style={{ boxShadow: '0 18px 50px rgba(7,17,31,0.08)', outline: '1px solid #E7ECF3' }}>
-            {title}<ExternalLink style={{ color: '#006BE6' }} />
-          </a>
-        ))}
-      </section>
+        {!data && !loading && (
+          <div className="card p-8 text-center">
+            <Gauge size={30} color="#CBD5E1" className="mx-auto mb-3" />
+            <div className="text-[13.5px] font-600 mb-1" style={{ color: '#0A0F1E' }}>No data yet</div>
+            <div className="text-[12px]" style={{ color: '#8E9BAD' }}>Enter your GitHub token above and click Check</div>
+          </div>
+        )}
+      </div>
     </Shell>
   );
 }

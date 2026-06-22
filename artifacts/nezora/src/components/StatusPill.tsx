@@ -1,9 +1,21 @@
-export function StatusPill({ tone = 'success', children }: { tone?: 'success' | 'warn' | 'info' | 'neutral'; children: React.ReactNode }) {
-  const styles: Record<string, React.CSSProperties> = {
-    success: { background: '#ECFDF5', color: '#059669', outline: '1px solid #A7F3D0' },
-    warn: { background: '#FFFBEB', color: '#D97706', outline: '1px solid #FDE68A' },
-    info: { background: '#EEF6FF', color: '#006BE6', outline: '1px solid #BFDBFE' },
-    neutral: { background: '#F6F8FB', color: '#65758B', outline: '1px solid #E7ECF3' }
-  };
-  return <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold" style={styles[tone]}>{children}</span>;
+type Status = 'running' | 'success' | 'failed' | 'building' | 'stopped' | 'pending' | 'warning';
+
+const MAP: Record<Status, { dot: string; bg: string; text: string; label: string }> = {
+  running:  { dot: '#30D158', bg: '#EDFAF2', text: '#1A7A3C', label: 'Running' },
+  success:  { dot: '#30D158', bg: '#EDFAF2', text: '#1A7A3C', label: 'Success' },
+  failed:   { dot: '#FF453A', bg: '#FFF0EF', text: '#C0392B', label: 'Failed' },
+  building: { dot: '#FF9F0A', bg: '#FFF8EC', text: '#A85E00', label: 'Building' },
+  stopped:  { dot: '#8E9BAD', bg: '#F2F4F7', text: '#4A5568', label: 'Stopped' },
+  pending:  { dot: '#8E9BAD', bg: '#F2F4F7', text: '#4A5568', label: 'Pending' },
+  warning:  { dot: '#FF9F0A', bg: '#FFF8EC', text: '#A85E00', label: 'Warning' },
+};
+
+export function StatusPill({ status, label }: { status: Status; label?: string }) {
+  const s = MAP[status] || MAP.pending;
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-600" style={{ background: s.bg, color: s.text }}>
+      <span className="w-1.5 h-1.5 rounded-full animate-pulse-dot" style={{ background: s.dot }} />
+      {label ?? s.label}
+    </span>
+  );
 }

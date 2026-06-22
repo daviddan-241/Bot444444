@@ -5,6 +5,7 @@ import AdmZip from "adm-zip";
 import path from "path";
 import { mkdtemp, rm, writeFile, readdir, stat, cp, readFile, mkdir } from "fs/promises";
 import { tmpdir } from "os";
+import { LOCAL_SITE_ROOT } from "./static-serve";
 
 const router: IRouter = Router();
 
@@ -82,8 +83,6 @@ function safeExtract(zipBuffer: Buffer, dest: string) {
   }
   zip.extractAllTo(dest, true);
 }
-
-const LOCAL_SITE_ROOT = process.env.NEZORA_LOCAL_SITE_ROOT || "/tmp/nezora-sites";
 
 router.post("/real/github-pages", async (req, res) => {
   if (!assertAdmin(req, res)) return;
@@ -203,7 +202,7 @@ router.post("/real/zip", async (req: any, res) => {
       }
       await cp(path.join(sourceDir, cmds.output), siteDest, { recursive: true });
       const origin = `${req.protocol}://${req.get("host")}`;
-      res.json({ ok: true, slug, url: `${origin}/s/${slug}/`, recommendation: { framework, installCommand: cmds.install, buildCommand: cmds.build, startCommand: "n/a", outputDirectory: cmds.output }, commands, message: "Temporary no-API static URL is live." });
+      res.json({ ok: true, slug, url: `${origin}/api/s/${slug}/`, recommendation: { framework, installCommand: cmds.install, buildCommand: cmds.build, startCommand: "n/a", outputDirectory: cmds.output }, commands, message: "Temporary no-API static URL is live." });
       return;
     }
 

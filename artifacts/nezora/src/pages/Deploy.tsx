@@ -39,11 +39,12 @@ export default function Deploy() {
     setDeploying(true); setResult(null); setLogs(['[DEPLOY] Uploading ZIP…']);
     const fd = new FormData();
     fd.append('file', file);
-    fd.append('name', name || file.name.replace(/\.zip$/i, ''));
+    fd.append('projectName', name || file.name.replace(/\.zip$/i, ''));
+    fd.append('target', 'instant');
     try {
-      const r = await fetch(`${base}/api/deploy/zip`, { method: 'POST', body: fd, credentials: 'include' });
+      const r = await fetch(`${base}/api/real/zip`, { method: 'POST', body: fd, credentials: 'include' });
       const data = await r.json();
-      setLogs(data.logs ?? []);
+      setLogs(data.commands?.map((c: any) => `[${c.code === 0 ? 'OK' : 'ERR'}] ${c.command}`) ?? []);
       setResult(data);
     } catch (e) {
       setLogs(['[ERR] Network error — is the API server running?']);
@@ -57,14 +58,34 @@ export default function Deploy() {
     if (!gitUrl) return;
     setDeploying(true); setResult(null);
     setLogs([`[DEPLOY] Cloning ${gitUrl}…`]);
+    // Parse github.com/owner/repo from URL
+    const match = gitUrl.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+    const owner = match?.[1] ?? '';
+    const repo = (match?.[2] ?? '').replace(/\.git$/, '');
+    if (!owner || !repo) {
+      setLogs(['[ERR] Please enter a valid GitHub URL like https://github.com/user/repo']);
+      setResult({ ok: false, error: 'Invalid GitHub URL' });
+      setDeploying(false);
+      return;
+    }
+    const fd = new FormData();
+    // Create a minimal placeholder — server will clone from GitHub
+    const blob = new Blob([''], { type: 'application/zip' });
+    fd.append('file', new File([blob], `${repo}.zip`));
+    fd.append('owner', owner);
+    fd.append('repo', repo);
+    fd.append('branch', gitBranch || 'main');
+    fd.append('projectName', name || repo);
+    fd.append('target', 'instant');
     try {
-      const r = await fetch(`${base}/api/deploy/git`, {
+      // Use github-pages clone endpoint for git deploys
+      const r = await fetch(`${base}/api/real/github-pages`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: gitUrl, branch: gitBranch || 'main', name: name || undefined }),
+        body: JSON.stringify({ owner, repo, branch: gitBranch || 'main', token: '' }),
       });
       const data = await r.json();
-      setLogs(data.logs ?? []);
+      setLogs(data.commands?.map((c: any) => `[${c.code === 0 ? 'OK' : 'ERR'}] ${c.command}`) ?? []);
       setResult(data);
     } catch {
       setLogs(['[ERR] Network error']);

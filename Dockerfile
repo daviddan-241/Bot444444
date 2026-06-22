@@ -4,7 +4,7 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Build web dashboard ──────────────────────────────────────────────
-FROM node:20-alpine AS web-builder
+FROM node:20 AS web-builder
 RUN npm install -g pnpm@10.26.1 --silent
 
 WORKDIR /workspace
@@ -22,7 +22,7 @@ RUN pnpm --filter @workspace/nezora run build
 # Output: artifacts/nezora/dist/public/
 
 # ── Stage 2: Build API server ─────────────────────────────────────────────────
-FROM node:20-alpine AS api-builder
+FROM node:20 AS api-builder
 RUN npm install -g pnpm@10.26.1 --silent
 
 WORKDIR /workspace

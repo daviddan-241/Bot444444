@@ -1,0 +1,100 @@
+2026-06-22T22:09:23.784894288Z #5 [web-builder 1/9] FROM docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+2026-06-22T22:09:23.784901829Z #5 resolve docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 0.0s done
+2026-06-22T22:09:24.004746745Z #5 ...
+2026-06-22T22:09:24.004767285Z 
+2026-06-22T22:09:24.004774006Z #6 [internal] load build context
+2026-06-22T22:09:24.004780236Z #6 transferring context: 1.09MB 0.0s done
+2026-06-22T22:09:24.004784276Z #6 DONE 0.1s
+2026-06-22T22:09:24.004788056Z 
+2026-06-22T22:09:24.004793616Z #5 [web-builder 1/9] FROM docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+2026-06-22T22:09:25.222009843Z #5 extracting sha256:6a0ac1617861a677b045b7ff88545213ec31c0ff08763195a70a4a5adda577bb 0.1s done
+2026-06-22T22:09:25.629864469Z #5 extracting sha256:4feea04c154301db6f4a496efa397b3db96603b1c009c797cfdde77bea8b3287
+2026-06-22T22:09:28.041393851Z #5 extracting sha256:4feea04c154301db6f4a496efa397b3db96603b1c009c797cfdde77bea8b3287 2.6s done
+2026-06-22T22:09:28.041412791Z #5 DONE 4.3s
+2026-06-22T22:09:28.15478331Z 
+2026-06-22T22:09:28.154808951Z #5 [web-builder 1/9] FROM docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+2026-06-22T22:09:28.154814771Z #5 extracting sha256:b2cbbfe903b0821005780971ddc5892edcc4ce74c5a48d82e1d2b382edac3122 0.1s done
+2026-06-22T22:09:28.154819611Z #5 DONE 4.4s
+2026-06-22T22:09:28.335640893Z 
+2026-06-22T22:09:28.335666913Z #5 [web-builder 1/9] FROM docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+2026-06-22T22:09:28.335671833Z #5 extracting sha256:fff4e2c1b189bf87d63ad8bd07f7f4eb288d6f2b6a07a8bb44c60e8c075d2096 0.0s done
+2026-06-22T22:09:28.335675283Z #5 DONE 4.5s
+2026-06-22T22:09:28.335678503Z 
+2026-06-22T22:09:28.335682503Z #7 [runner 2/8] RUN apk add --no-cache curl git
+2026-06-22T22:09:28.667342547Z #7 0.482 ( 1/13) Installing brotli-libs (1.2.0-r0)
+2026-06-22T22:09:28.773816404Z #7 0.506 ( 2/13) Installing c-ares (1.34.6-r0)
+2026-06-22T22:09:28.773842995Z #7 0.518 ( 3/13) Installing libunistring (1.4.1-r0)
+2026-06-22T22:09:28.773848435Z #7 0.537 ( 4/13) Installing libidn2 (2.3.8-r0)
+2026-06-22T22:09:28.773852925Z #7 0.550 ( 5/13) Installing nghttp2-libs (1.69.0-r0)
+2026-06-22T22:09:28.773857485Z #7 0.561 ( 6/13) Installing libpsl (0.21.5-r3)
+2026-06-22T22:09:28.773862065Z #7 0.572 ( 7/13) Installing zstd-libs (1.5.7-r2)
+2026-06-22T22:09:28.773879506Z #7 0.589 ( 8/13) Installing libcurl (8.19.0-r0)
+2026-06-22T22:09:28.904315337Z #7 0.603 ( 9/13) Installing curl (8.19.0-r0)
+2026-06-22T22:09:28.904333188Z #7 0.619 (10/13) Installing libexpat (2.8.1-r0)
+2026-06-22T22:09:28.904336858Z #7 0.630 (11/13) Installing pcre2 (10.47-r0)
+2026-06-22T22:09:28.904340068Z #7 0.646 (12/13) Installing git (2.52.0-r0)
+2026-06-22T22:09:28.904343808Z #7 0.719 (13/13) Installing git-init-template (2.52.0-r0)
+2026-06-22T22:09:29.008413505Z #7 0.731 Executing busybox-1.37.0-r30.trigger
+2026-06-22T22:09:29.008430836Z #7 0.743 OK: 23.3 MiB in 31 packages
+2026-06-22T22:09:29.008434576Z #7 DONE 0.8s
+2026-06-22T22:09:29.008437876Z 
+2026-06-22T22:09:29.008441986Z #8 [web-builder 2/9] RUN npm install -g pnpm@9 --silent
+2026-06-22T22:09:29.21411312Z #8 ...
+2026-06-22T22:09:29.214136Z 
+2026-06-22T22:09:29.21414249Z #9 [runner 3/8] WORKDIR /app
+2026-06-22T22:09:29.214146761Z #9 DONE 0.1s
+2026-06-22T22:09:29.36435958Z 
+2026-06-22T22:09:29.364391031Z #8 [web-builder 2/9] RUN npm install -g pnpm@9 --silent
+2026-06-22T22:09:29.519359929Z #8 DONE 1.3s
+2026-06-22T22:09:29.639744483Z 
+2026-06-22T22:09:29.639766853Z #10 [web-builder 3/9] WORKDIR /workspace
+2026-06-22T22:09:29.639772104Z #10 DONE 0.1s
+2026-06-22T22:09:29.639777564Z 
+2026-06-22T22:09:29.639783554Z #11 [web-builder 4/9] COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+2026-06-22T22:09:29.639788434Z #11 DONE 0.1s
+2026-06-22T22:09:29.755624184Z 
+2026-06-22T22:09:29.755652095Z #12 [web-builder 5/9] COPY lib/ ./lib/
+2026-06-22T22:09:29.755659305Z #12 DONE 0.0s
+2026-06-22T22:09:29.755665355Z 
+2026-06-22T22:09:29.755671815Z #13 [api-builder 6/9] COPY artifacts/api-server/package.json ./artifacts/api-server/
+2026-06-22T22:09:29.755675925Z #13 DONE 0.1s
+2026-06-22T22:09:29.755679685Z 
+2026-06-22T22:09:29.755684145Z #14 [web-builder 6/9] COPY artifacts/nezora/package.json ./artifacts/nezora/
+2026-06-22T22:09:29.916386572Z #14 DONE 0.1s
+2026-06-22T22:09:29.916411932Z 
+2026-06-22T22:09:29.916417972Z #15 [web-builder 7/9] RUN pnpm install --frozen-lockfile --filter @workspace/nezora...
+2026-06-22T22:09:30.508527931Z #15 0.609 Scope: 2 of 6 workspace projects
+2026-06-22T22:09:30.651758996Z #15 0.776  ERR_PNPM_LOCKFILE_CONFIG_MISMATCH  Cannot proceed with the frozen installation. The current "settings.autoInstallPeers" configuration doesn't match the value found in the lockfile
+2026-06-22T22:09:30.651780627Z #15 0.776 
+2026-06-22T22:09:30.651787107Z #15 0.776 Update your lockfile using "pnpm install --no-frozen-lockfile"
+2026-06-22T22:09:30.651792717Z #15 ERROR: process "/bin/sh -c pnpm install --frozen-lockfile --filter @workspace/nezora..." did not complete successfully: exit code: 1
+2026-06-22T22:09:30.651795777Z 
+2026-06-22T22:09:30.651799567Z #16 [api-builder 7/9] RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
+2026-06-22T22:09:30.651803627Z #16 0.584 Scope: 3 of 6 workspace projects
+2026-06-22T22:09:30.651806837Z #16 0.751  ERR_PNPM_LOCKFILE_CONFIG_MISMATCH  Cannot proceed with the frozen installation. The current "settings.autoInstallPeers" configuration doesn't match the value found in the lockfile
+2026-06-22T22:09:30.651809987Z #16 0.751 
+2026-06-22T22:09:30.651813197Z #16 0.751 Update your lockfile using "pnpm install --no-frozen-lockfile"
+2026-06-22T22:09:30.651816477Z #16 ERROR: process "/bin/sh -c pnpm install --frozen-lockfile --filter @workspace/api-server..." did not complete successfully: exit code: 1
+2026-06-22T22:09:30.651819637Z ------
+2026-06-22T22:09:30.651822868Z  > [api-builder 7/9] RUN pnpm install --frozen-lockfile --filter @workspace/api-server...:
+2026-06-22T22:09:30.651836168Z 0.584 Scope: 3 of 6 workspace projects
+2026-06-22T22:09:30.651840098Z 0.751  ERR_PNPM_LOCKFILE_CONFIG_MISMATCH  Cannot proceed with the frozen installation. The current "settings.autoInstallPeers" configuration doesn't match the value found in the lockfile
+2026-06-22T22:09:30.651842178Z 0.751 
+2026-06-22T22:09:30.651844298Z 0.751 Update your lockfile using "pnpm install --no-frozen-lockfile"
+2026-06-22T22:09:30.651846668Z ------
+2026-06-22T22:09:30.651848808Z ------
+2026-06-22T22:09:30.651850768Z  > [web-builder 7/9] RUN pnpm install --frozen-lockfile --filter @workspace/nezora...:
+2026-06-22T22:09:30.651853028Z 0.609 Scope: 2 of 6 workspace projects
+2026-06-22T22:09:30.651855088Z 0.776  ERR_PNPM_LOCKFILE_CONFIG_MISMATCH  Cannot proceed with the frozen installation. The current "settings.autoInstallPeers" configuration doesn't match the value found in the lockfile
+2026-06-22T22:09:30.651857118Z 0.776 
+2026-06-22T22:09:30.651859178Z 0.776 Update your lockfile using "pnpm install --no-frozen-lockfile"
+2026-06-22T22:09:30.651861138Z ------
+2026-06-22T22:09:30.65244247Z Dockerfile:33
+2026-06-22T22:09:30.652454561Z --------------------
+2026-06-22T22:09:30.65245707Z   31 |     COPY artifacts/api-server/package.json ./artifacts/api-server/
+2026-06-22T22:09:30.65245915Z   32 |     
+2026-06-22T22:09:30.65246141Z   33 | >>> RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
+2026-06-22T22:09:30.652463501Z   34 |     
+2026-06-22T22:09:30.652466121Z   35 |     COPY artifacts/api-server/ ./artifacts/api-server/
+2026-06-22T22:09:30.652468121Z --------------------
+2026-06-22T22:09:30.652472071Z error: failed to solve: process "/bin/sh -c pnpm install --frozen-lockfile --filter @workspace/api-server..." did not complete successfully: exit code: 1

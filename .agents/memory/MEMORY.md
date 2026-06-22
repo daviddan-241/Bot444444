@@ -1,2 +1,3 @@
 - [Cloud OS backend quirks](cloudos-backend.md) — process-manager, workers, deploy-engine; saveProject not saveProjects; wildcard routes use {/*param}
 - [Mobile Auth Pattern](mobile-auth-pattern.md) — mobile uses custom admin token header (not Clerk), stored in AsyncStorage, attached via useApi hook
+- [Expo Preview Caching](expo-preview-cache.md) — screenshot tool shows stale bundle; use curl+grep on Metro bundle to confirm new code is included instead

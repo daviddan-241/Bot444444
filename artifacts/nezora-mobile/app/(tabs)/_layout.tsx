@@ -1,47 +1,18 @@
 import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { useDeploy } from "@/contexts/DeployContext";
 
-function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "square.grid.2x2", selected: "square.grid.2x2.fill" }} />
-        <Label>Dashboard</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="deploy">
-        <Icon sf={{ default: "arrow.up.circle", selected: "arrow.up.circle.fill" }} />
-        <Label>Deploy</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="apps">
-        <Icon sf={{ default: "rectangle.3.group", selected: "rectangle.3.group.fill" }} />
-        <Label>Apps</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="ai">
-        <Icon sf={{ default: "sparkles", selected: "sparkles" }} />
-        <Label>AI</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="settings">
-        <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
-        <Label>Settings</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
-}
-
-function ClassicTabLayout() {
+export default function TabLayout() {
   const colors = useColors();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const { activeCount } = useDeploy();
 
   return (
     <Tabs
@@ -51,19 +22,32 @@ function ClassicTabLayout() {
         headerShown: false,
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : colors.card,
-          borderTopWidth: 1,
+          backgroundColor: isIOS ? "transparent" : colors.tabBar,
+          borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border,
           elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
+          height: isWeb ? 84 : undefined,
         },
-        tabBarLabelStyle: { fontSize: 10, fontFamily: "Inter_500Medium", marginBottom: 2 },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontFamily: "Inter_500Medium",
+          marginBottom: 2,
+        },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView intensity={100} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
-          ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />
-          ) : null,
+            <BlurView
+              intensity={90}
+              tint="dark"
+              style={StyleSheet.absoluteFill}
+            />
+          ) : (
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: colors.tabBar },
+              ]}
+            />
+          ),
       }}
     >
       <Tabs.Screen
@@ -82,9 +66,15 @@ function ClassicTabLayout() {
         name="deploy"
         options={{
           title: "Deploy",
+          tabBarBadge: activeCount > 0 ? activeCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: "#3B82F6", fontSize: 10 },
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="arrow.up.circle" tintColor={color} size={22} />
+              <SymbolView
+                name="arrow.up.circle"
+                tintColor={color}
+                size={22}
+              />
             ) : (
               <Feather name="upload-cloud" size={21} color={color} />
             ),
@@ -96,7 +86,11 @@ function ClassicTabLayout() {
           title: "Apps",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="rectangle.3.group" tintColor={color} size={22} />
+              <SymbolView
+                name="rectangle.3.group"
+                tintColor={color}
+                size={22}
+              />
             ) : (
               <Feather name="box" size={21} color={color} />
             ),
@@ -128,11 +122,4 @@ function ClassicTabLayout() {
       />
     </Tabs>
   );
-}
-
-export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
 }

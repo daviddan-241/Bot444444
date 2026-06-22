@@ -1,266 +1,265 @@
 import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
+  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useApi } from "@/hooks/useApi";
+import { useAuth } from "@/contexts/AuthContext";
+import { useDeploy, DeployJob } from "@/contexts/DeployContext";
 import { useColors } from "@/hooks/useColors";
 
 type DeployMode = "git" | "docker";
 
-interface LogLine { text: string; type: "ok" | "err" | "info" | "plain"; }
+function classifyColor(line: string) {
+  if (line.includes("[ERR]") || line.toLowerCase().includes("error") || line.toLowerCase().includes("failed")) return "#FF453A";
+  if (line.includes("✓") || line.toLowerCase().includes("success") || line.includes("[DEPLOY]")) return "#30D158";
+  if (line.includes("[DETECT]") || line.includes("[BUILD]") || line.includes("[INSTALL]")) return "#60A5FA";
+  return "#94A3B8";
+}
 
-function classifyLog(line: string): LogLine["type"] {
-  if (line.includes("[ERR]") || line.toLowerCase().includes("error") || line.toLowerCase().includes("failed")) return "err";
-  if (line.includes("[DEPLOY]") || line.includes("✓") || line.toLowerCase().includes("success")) return "ok";
-  if (line.includes("[DETECT]") || line.includes("[BUILD]") || line.includes("[INSTALL]")) return "info";
-  return "plain";
+function JobRow({ job }: { job: DeployJob }) {
+  const colors = useColors();
+  const elapsed = job.finishedAt
+    ? `${Math.round((job.finishedAt - job.startedAt) / 1000)}s`
+    : `${Math.round((Date.now() - job.startedAt) / 1000)}s ago`;
+
+  return (
+    <View style={{ backgroundColor: colors.card, borderRadius: 14, padding: 14, marginBottom: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View style={{
+          width: 34, height: 34, borderRadius: 10,
+          backgroundColor: job.status === "success" ? "#30D15818" : job.status === "failed" ? "#FF453A18" : "#3B82F618",
+          alignItems: "center", justifyContent: "center",
+        }}>
+          <Feather
+            name={job.status === "success" ? "check-circle" : job.status === "failed" ? "x-circle" : "loader"}
+            size={18}
+            color={job.status === "success" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#3B82F6"}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{job.name}</Text>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{job.mode} · {elapsed}</Text>
+        </View>
+        <Text style={{ fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: job.status === "success" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#3B82F6" }}>
+          {job.status}
+        </Text>
+      </View>
+      {job.status === "failed" && job.error && (
+        <Text style={{ fontSize: 12, color: "#FF453A", fontFamily: "Inter_400Regular", marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
+          {job.error}
+        </Text>
+      )}
+      {job.status === "success" && job.url && (
+        <Text style={{ fontSize: 12, color: "#3B82F6", fontFamily: "Inter_400Regular", marginTop: 8 }} numberOfLines={1}>{job.url}</Text>
+      )}
+      {job.logs && job.logs.length > 0 && (
+        <View style={{ backgroundColor: "#080B12", borderRadius: 8, padding: 10, marginTop: 10, maxHeight: 120 }}>
+          {job.logs.slice(-8).map((l, i) => (
+            <Text key={i} style={{ fontSize: 11, color: classifyColor(l), fontFamily: "Inter_400Regular", lineHeight: 17 }}>{l}</Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
 }
 
 export default function DeployScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { post } = useApi();
+  const scheme = useColorScheme();
+  const isDark = scheme === "dark";
+  const { serverUrl, token } = useAuth();
+  const { jobs, addJob, updateJob, clearFinished, activeCount } = useDeploy();
 
   const [mode, setMode] = useState<DeployMode>("git");
   const [name, setName] = useState("");
   const [gitUrl, setGitUrl] = useState("");
   const [branch, setBranch] = useState("main");
   const [dockerImg, setDockerImg] = useState("");
-  const [deploying, setDeploying] = useState(false);
-  const [logs, setLogs] = useState<LogLine[]>([]);
-  const [result, setResult] = useState<{ ok: boolean; url?: string; error?: string } | null>(null);
 
-  const deploy = async () => {
+  const fireAndForget = async () => {
     const n = name.trim();
     if (!n) { Alert.alert("Missing name", "Enter an app name."); return; }
+    if (mode === "git" && !gitUrl.trim()) { Alert.alert("Missing URL", "Enter a Git repository URL."); return; }
+    if (mode === "docker" && !dockerImg.trim()) { Alert.alert("Missing image", "Enter a Docker image name."); return; }
 
-    if (mode === "git") {
-      if (!gitUrl.trim()) { Alert.alert("Missing URL", "Enter a Git repository URL."); return; }
-    } else {
-      if (!dockerImg.trim()) { Alert.alert("Missing image", "Enter a Docker image name."); return; }
-    }
+    const jobId = `job_${Date.now()}`;
+    const job: Omit<DeployJob, "startedAt"> = {
+      id: jobId,
+      name: n,
+      mode,
+      status: "deploying",
+    };
 
-    setDeploying(true);
-    setResult(null);
-    setLogs([{ text: mode === "git" ? "[DEPLOY] Starting Git deploy…" : "[DEPLOY] Starting Docker deploy…", type: "info" }]);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await addJob(job);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    try {
-      let data: any;
-      if (mode === "git") {
-        data = await post("/deploy/git", { name: n, url: gitUrl.trim(), branch: branch.trim() || "main" });
-      } else {
-        data = await post("/deploy/docker", { name: n, image: dockerImg.trim() });
-      }
-
-      const lines: LogLine[] = (data?.logs ?? []).map((l: string) => ({ text: l, type: classifyLog(l) }));
-      setLogs(lines.length > 0 ? lines : [{ text: data?.ok ? "[DEPLOY] ✓ Deployed" : `[ERR] ${data?.error ?? "Unknown error"}`, type: data?.ok ? "ok" : "err" }]);
-      setResult(data);
-
-      if (data?.ok) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      }
-    } catch (e: any) {
-      setLogs([{ text: "[ERR] Network error — is the API server reachable?", type: "err" }]);
-      setResult({ ok: false, error: "Network error" });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setDeploying(false);
-    }
-  };
-
-  const reset = () => {
-    setResult(null);
-    setLogs([]);
+    // Clear form so user can start another deploy
     setName("");
     setGitUrl("");
     setBranch("main");
     setDockerImg("");
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Fire request — doesn't block the UI at all
+    const doFetch = async () => {
+      try {
+        const body = mode === "git"
+          ? JSON.stringify({ name: n, url: gitUrl.trim(), branch: branch.trim() || "main" })
+          : JSON.stringify({ name: n, image: dockerImg.trim() });
+
+        const endpoint = mode === "git" ? "/api/deploy/git" : "/api/deploy/docker";
+        const res = await fetch(`${serverUrl}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-nezora-admin-token": token },
+          body,
+        });
+        const data = await res.json();
+        await updateJob(jobId, {
+          status: data?.ok ? "success" : "failed",
+          url: data?.url,
+          error: data?.error,
+          logs: data?.logs,
+          finishedAt: Date.now(),
+        });
+      } catch (e: any) {
+        await updateJob(jobId, {
+          status: "failed",
+          error: e.message ?? "Network error",
+          finishedAt: Date.now(),
+        });
+      }
+    };
+
+    // Intentional fire-and-forget: no await
+    doFetch();
   };
 
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    header: { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16), paddingHorizontal: 20, paddingBottom: 8 },
-    title: { fontSize: 28, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    sub: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
-    section: { paddingHorizontal: 20, marginTop: 20 },
-    label: { fontSize: 13, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginLeft: 2 },
-    input: {
-      backgroundColor: colors.card, borderRadius: colors.radius,
-      paddingHorizontal: 16, paddingVertical: 13,
-      fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular",
-      borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-    },
-    row: { flexDirection: "row", gap: 10 },
-    segBtn: { flex: 1, paddingVertical: 10, borderRadius: colors.radius, alignItems: "center", borderWidth: 1.5 },
-    deployBtn: {
-      backgroundColor: colors.primary, borderRadius: colors.radius + 2,
-      paddingVertical: 16, flexDirection: "row", alignItems: "center",
-      justifyContent: "center", gap: 8,
-    },
-    deployBtnText: { color: colors.primaryForeground, fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
-    logBox: { backgroundColor: "#0D0D0D", borderRadius: colors.radius, padding: 14, minHeight: 120, maxHeight: 280 },
-    logLine: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 19 },
-    resultBanner: {
-      flexDirection: "row", alignItems: "center", gap: 10,
-      padding: 14, borderRadius: colors.radius, marginTop: 12,
-    },
-    resultText: { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium" },
-  });
+  const inputStyle = {
+    backgroundColor: colors.card, borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 13,
+    fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" as const,
+    borderWidth: 1, borderColor: colors.border,
+  };
+
+  const labelStyle = {
+    fontSize: 12, fontWeight: "600" as const, color: colors.mutedForeground,
+    fontFamily: "Inter_600SemiBold" as const, textTransform: "uppercase" as const,
+    letterSpacing: 0.5, marginBottom: 7, marginLeft: 2,
+  };
 
   return (
-    <KeyboardAvoidingView style={s.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled">
-        <View style={s.header}>
-          <Text style={s.title}>Deploy</Text>
-          <Text style={s.sub}>Launch a new app from Git or Docker</Text>
-        </View>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <LinearGradient
+          colors={isDark ? ["#0F1628", "#070B14"] : ["#FFFFFF", "#F2F2F7"]}
+          style={{ paddingTop: insets.top + (Platform.OS === "web" ? 67 : 20), paddingHorizontal: 20, paddingBottom: 20 }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <LinearGradient colors={["#1D4ED8", "#3B82F6"]} style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" }}>
+              <Feather name="upload-cloud" size={20} color="#fff" />
+            </LinearGradient>
+            <View>
+              <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Deploy</Text>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Tap deploy, leave — it runs on your server</Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* Active jobs pill */}
+        {activeCount > 0 && (
+          <View style={{ marginHorizontal: 20, marginTop: 16 }}>
+            <LinearGradient colors={["#1D4ED8", "#7C3AED"]} style={{ borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" }} />
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: "600", color: "#fff", fontFamily: "Inter_600SemiBold" }}>
+                {activeCount} deploy{activeCount > 1 ? "s" : ""} running on your server
+              </Text>
+            </LinearGradient>
+          </View>
+        )}
 
         {/* Mode selector */}
-        <View style={s.section}>
-          <Text style={s.label}>Deploy Type</Text>
-          <View style={s.row}>
+        <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
+          <Text style={labelStyle}>Deploy Type</Text>
+          <View style={{ flexDirection: "row", gap: 10 }}>
             {(["git", "docker"] as DeployMode[]).map(m => (
               <Pressable
                 key={m}
-                style={[s.segBtn, {
-                  backgroundColor: mode === m ? colors.primary : colors.card,
+                style={({ pressed }) => ({
+                  flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: "center",
+                  borderWidth: 2, opacity: pressed ? 0.8 : 1,
+                  backgroundColor: mode === m ? colors.primary + "18" : colors.card,
                   borderColor: mode === m ? colors.primary : colors.border,
-                }]}
+                })}
                 onPress={() => { setMode(m); Haptics.selectionAsync(); }}
               >
-                <Feather name={m === "git" ? "git-branch" : "package"} size={16} color={mode === m ? "#fff" : colors.mutedForeground} />
-                <Text style={{ fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: mode === m ? "#fff" : colors.mutedForeground, marginTop: 3 }}>
-                  {m === "git" ? "Git Repo" : "Docker Image"}
+                {/* @ts-ignore */}
+                <Feather name={m === "git" ? "git-branch" : "package"} size={18} color={mode === m ? colors.primary : colors.mutedForeground} />
+                <Text style={{ fontSize: 13, fontWeight: "600", color: mode === m ? colors.primary : colors.mutedForeground, fontFamily: "Inter_600SemiBold", marginTop: 4 }}>
+                  {m === "git" ? "Git Repo" : "Docker"}
                 </Text>
               </Pressable>
             ))}
           </View>
         </View>
 
-        {/* App name */}
-        <View style={s.section}>
-          <Text style={s.label}>App Name</Text>
-          <TextInput
-            style={s.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="my-awesome-app"
-            placeholderTextColor={colors.mutedForeground}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+        {/* Form */}
+        <View style={{ paddingHorizontal: 20, marginTop: 18 }}>
+          <Text style={labelStyle}>App Name</Text>
+          <TextInput style={[inputStyle, { marginBottom: 16 }]} value={name} onChangeText={setName} placeholder="my-app" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false} />
+
+          {mode === "git" && (
+            <>
+              <Text style={labelStyle}>Repository URL</Text>
+              <TextInput style={[inputStyle, { marginBottom: 16 }]} value={gitUrl} onChangeText={setGitUrl} placeholder="https://github.com/user/repo" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false} keyboardType="url" />
+              <Text style={labelStyle}>Branch</Text>
+              <TextInput style={[inputStyle, { marginBottom: 16 }]} value={branch} onChangeText={setBranch} placeholder="main" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false} />
+            </>
+          )}
+
+          {mode === "docker" && (
+            <>
+              <Text style={labelStyle}>Docker Image</Text>
+              <TextInput style={[inputStyle, { marginBottom: 16 }]} value={dockerImg} onChangeText={setDockerImg} placeholder="nginx:latest" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false} />
+            </>
+          )}
         </View>
-
-        {/* Git fields */}
-        {mode === "git" && (
-          <>
-            <View style={s.section}>
-              <Text style={s.label}>Repository URL</Text>
-              <TextInput
-                style={s.input}
-                value={gitUrl}
-                onChangeText={setGitUrl}
-                placeholder="https://github.com/user/repo"
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-              />
-            </View>
-            <View style={s.section}>
-              <Text style={s.label}>Branch</Text>
-              <TextInput
-                style={s.input}
-                value={branch}
-                onChangeText={setBranch}
-                placeholder="main"
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-          </>
-        )}
-
-        {/* Docker fields */}
-        {mode === "docker" && (
-          <View style={s.section}>
-            <Text style={s.label}>Docker Image</Text>
-            <TextInput
-              style={s.input}
-              value={dockerImg}
-              onChangeText={setDockerImg}
-              placeholder="nginx:latest"
-              placeholderTextColor={colors.mutedForeground}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-        )}
 
         {/* Deploy button */}
-        <View style={[s.section, { marginTop: 24 }]}>
-          <Pressable
-            style={({ pressed }) => [s.deployBtn, pressed && { opacity: 0.8 }, deploying && { opacity: 0.7 }]}
-            onPress={deploy}
-            disabled={deploying}
-          >
-            {deploying ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Feather name="upload-cloud" size={18} color="#fff" />
-                <Text style={s.deployBtnText}>Deploy App</Text>
-              </>
-            )}
+        <View style={{ paddingHorizontal: 20, marginTop: 4 }}>
+          <Pressable onPress={fireAndForget} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
+            <LinearGradient colors={["#1D4ED8", "#7C3AED"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }}>
+              <Feather name="zap" size={20} color="#fff" />
+              <Text style={{ fontSize: 17, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>Deploy Now</Text>
+            </LinearGradient>
           </Pressable>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 10 }}>
+            Runs on your server — safe to close this screen
+          </Text>
         </View>
 
-        {/* Result banner */}
-        {result && (
-          <View style={s.section}>
-            <View style={[s.resultBanner, { backgroundColor: result.ok ? "#34C75918" : "#FF3B3018" }]}>
-              <Feather name={result.ok ? "check-circle" : "x-circle"} size={20} color={result.ok ? "#34C759" : "#FF3B30"} />
-              <Text style={[s.resultText, { color: result.ok ? "#34C759" : "#FF3B30" }]}>
-                {result.ok ? `Deployed! ${result.url ? `→ ${result.url}` : ""}` : result.error ?? "Deploy failed"}
-              </Text>
-              <Pressable onPress={reset} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
-                <Feather name="rotate-ccw" size={18} color={colors.mutedForeground} />
+        {/* Job history */}
+        {jobs.length > 0 && (
+          <View style={{ paddingHorizontal: 20, marginTop: 28 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Deploy History</Text>
+              <Pressable onPress={clearFinished} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
+                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>Clear done</Text>
               </Pressable>
             </View>
-          </View>
-        )}
-
-        {/* Logs */}
-        {logs.length > 0 && (
-          <View style={s.section}>
-            <Text style={s.label}>Build Output</Text>
-            <View style={s.logBox}>
-              {logs.map((l, i) => (
-                <Text key={i} style={[s.logLine, {
-                  color: l.type === "ok" ? "#34C759" : l.type === "err" ? "#FF453A" : l.type === "info" ? "#64D2FF" : "#EBEBF5AA"
-                }]}>
-                  {l.text}
-                </Text>
-              ))}
-            </View>
+            {[...jobs].reverse().map(j => <JobRow key={j.id} job={j} />)}
           </View>
         )}
 

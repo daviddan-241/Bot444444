@@ -1,62 +1,44 @@
-# Danny's Cloud OS
+# [Project name]
 
-A personal private cloud operating system — deploy, monitor, and manage your entire infrastructure from one place. Deploy from Git, ZIP, Docker, or templates. AI assistant for analysis and Dockerfile generation. Real-time monitoring, domain management, databases, storage, and automation.
+_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
-- `pnpm --filter @workspace/nezora run dev` — run the frontend (port 25611)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks from OpenAPI spec
+- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
-- Optional env: `GROQ_API_KEY` — Groq free LLM for AI assistant (falls back to HuggingFace then local)
-- Optional env: `ADMIN_TOKEN` — Admin auth token (default: any token accepted)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- Frontend: React + Vite + Tailwind v4 (artifact: `artifacts/nezora`)
-- API: Express 5 (artifact: `artifacts/api-server`)
-- DB: PostgreSQL + Drizzle ORM (optional; project/domain/db data stored in `/tmp/nezora-data`)
-- Routing: wouter (frontend), Express 5 router (backend)
-- AI: Groq API (llama-3.3-70b-versatile) → HuggingFace fallback → local smart responses
-- File uploads: `express-fileupload` + `adm-zip`
+- API: Express 5
+- DB: PostgreSQL + Drizzle ORM
+- Validation: Zod (`zod/v4`), `drizzle-zod`
+- API codegen: Orval (from OpenAPI spec)
+- Build: esbuild (CJS bundle)
 
 ## Where things live
 
-- `artifacts/nezora/src/pages/` — all 18 pages (Home, Deploy, Projects, AI, Monitoring, Logs, Domains, Databases, Storage, Containers, Templates, Automation, Settings, Providers, Limits, Deployments, Admin, Login)
-- `artifacts/nezora/src/components/Shell.tsx` — collapsible sidebar + top bar layout
-- `artifacts/nezora/src/index.css` — design tokens (Apple-inspired glassmorphism)
-- `artifacts/api-server/src/routes/` — Express routes (system, projects, ai, domains, databases, storage, deploy, auth, limits, shell, static-serve)
-- `artifacts/api-server/src/lib/auth-guard.ts` — cookie + header auth middleware
+_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
 
 ## Architecture decisions
 
-- Control Plane + pluggable Runtime Provider model — platform handles orchestration, provider handles compute
-- Express 5 with path-to-regexp v8 requires `{/*path}` wildcard syntax (not `*` or `/:param(*)`)
-- Project/domain/database data persisted as JSON in `NEZORA_DATA_DIR` (/tmp/nezora-data by default)
-- AI: GROQ_API_KEY → HuggingFace Inference API → local smart responses (no key required to use)
-- Auth: `nezora_admin` cookie or `x-nezora-admin-token` header; single-owner mode
-- Sidebar is collapsible on desktop, slide-over on mobile
+_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
 
 ## Product
 
-Danny's Cloud OS is a personal private cloud control plane. You connect your GitHub account, upload ZIPs or paste repo URLs, and the platform auto-detects framework, builds, and deploys. Includes: Deploy Center (Git/ZIP/Docker/Templates), AI Assistant, real-time monitoring with live metrics, projects management, domain + SSL, databases, storage, containers, automation workflows, and a logs viewer.
+_Describe the high-level user-facing capabilities of this app once they exist._
 
 ## User preferences
 
-- Platform name: Danny's Cloud OS (v2)
-- AI: use free LLMs (Groq free tier, HuggingFace fallback)
-- Self-hosted on Render (no external API dependencies required)
-- Mobile-first design, Apple-inspired glassmorphism
+_Populate as you build — explicit user instructions worth remembering across sessions._
 
 ## Gotchas
 
-- Express 5 path-to-regexp v8: wildcard routes must use `{/*param}` syntax
-- Always run `pnpm --filter @workspace/api-spec run codegen` after changing `openapi.yaml`
-- `express-fileupload` file is accessed as `req.files?.file` (typed as `UploadedFile`)
-- System stats (CPU/RAM) read from /proc/stat and `free` — works on Linux/Replit, not macOS
+_Populate as you build — sharp edges, "always run X before Y" rules._
 
 ## Pointers
 

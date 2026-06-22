@@ -1,0 +1,50 @@
+2026-06-22T23:20:04.851060684Z #20 0.636 ▲ [WARNING] Cannot find base config file "../../tsconfig.base.json" [tsconfig.json]
+2026-06-22T23:20:04.851065385Z #20 0.636 
+2026-06-22T23:20:04.851071815Z #20 0.636     tsconfig.json:2:13:
+2026-06-22T23:20:04.851078445Z #20 0.636       2 │   "extends": "../../tsconfig.base.json",
+2026-06-22T23:20:04.851084325Z #20 0.636         ╵              ~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-06-22T23:20:04.851090375Z #20 0.636 
+2026-06-22T23:20:04.851097025Z #20 0.692 ▲ [WARNING] Cannot find base config file "../../tsconfig.base.json" [tsconfig.json]
+2026-06-22T23:20:04.851102496Z #20 0.692 
+2026-06-22T23:20:04.851106345Z #20 0.692     ../../lib/api-zod/tsconfig.json:2:13:
+2026-06-22T23:20:04.851110196Z #20 0.692       2 │   "extends": "../../tsconfig.base.json",
+2026-06-22T23:20:04.851114026Z #20 0.692         ╵              ~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-06-22T23:20:04.851117856Z #20 0.692 
+2026-06-22T23:20:04.851122636Z #20 0.840 2 warnings
+2026-06-22T23:20:04.851128596Z #20 0.840 
+2026-06-22T23:20:04.851148977Z #20 0.840   dist/index.mjs                       1.7mb ⚠️
+2026-06-22T23:20:04.851174227Z #20 0.840   dist/pino-worker.mjs               153.4kb
+2026-06-22T23:20:04.851183357Z #20 0.840   dist/pino-file.mjs                 142.0kb
+2026-06-22T23:20:04.851189307Z #20 0.840   dist/pino-pretty.mjs               114.6kb
+2026-06-22T23:20:04.851195027Z #20 0.840   dist/thread-stream-worker.mjs        7.3kb
+2026-06-22T23:20:04.851201208Z #20 0.840   dist/index.mjs.map                   2.7mb
+2026-06-22T23:20:04.851205138Z #20 0.840   dist/pino-worker.mjs.map           256.9kb
+2026-06-22T23:20:04.851208878Z #20 0.840   dist/pino-file.mjs.map             229.0kb
+2026-06-22T23:20:04.851212698Z #20 0.840   dist/pino-pretty.mjs.map           204.0kb
+2026-06-22T23:20:04.851216468Z #20 0.840   dist/thread-stream-worker.mjs.map   12.0kb
+2026-06-22T23:20:04.851220288Z #20 0.840 
+2026-06-22T23:20:04.851224228Z #20 0.840 ⚡ Done in 206ms
+2026-06-22T23:20:04.851228108Z #20 DONE 0.9s
+2026-06-22T23:20:04.851231998Z ------
+2026-06-22T23:20:04.851245699Z  > [web-builder 9/9] RUN pnpm --filter @workspace/nezora run build:
+2026-06-22T23:20:04.851252219Z 0.722     requireStack: [
+2026-06-22T23:20:04.851258329Z 0.722       '/workspace/node_modules/.pnpm/rollup@4.60.3/node_modules/rollup/dist/native.js'
+2026-06-22T23:20:04.851264039Z 0.722     ]
+2026-06-22T23:20:04.851269999Z 0.722   }
+2026-06-22T23:20:04.851275299Z 0.722 }
+2026-06-22T23:20:04.851279119Z 0.722 
+2026-06-22T23:20:04.851282909Z 0.722 Node.js v20.20.2
+2026-06-22T23:20:04.85128686Z 0.823 /workspace/artifacts/nezora:
+2026-06-22T23:20:04.851290829Z 0.823  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/nezora@0.0.0 build: `vite build --config vite.config.ts`
+2026-06-22T23:20:04.8512948Z 0.823 Exit status 1
+2026-06-22T23:20:04.85129862Z ------
+2026-06-22T23:20:04.851868142Z Dockerfile:21
+2026-06-22T23:20:04.851885283Z --------------------
+2026-06-22T23:20:04.851905763Z   19 |     # Build Vite app at base path "/" (served by Express in production)
+2026-06-22T23:20:04.851909003Z   20 |     ENV NODE_ENV=production BASE_PATH=/ PORT=3000
+2026-06-22T23:20:04.851911563Z   21 | >>> RUN pnpm --filter @workspace/nezora run build
+2026-06-22T23:20:04.851914083Z   22 |     # Output: artifacts/nezora/dist/public/
+2026-06-22T23:20:04.851916733Z   23 |     
+2026-06-22T23:20:04.851919383Z --------------------
+2026-06-22T23:20:04.851922783Z error: failed to solve: process "/bin/sh -c pnpm --filter @workspace/nezora run build" did not complete successfully: exit code: 1
+2026-06-22T23:20:04.870592375Z error: exit status 1

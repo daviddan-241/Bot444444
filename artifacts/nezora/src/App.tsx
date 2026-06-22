@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import Home from "@/pages/Home";
+import Sites from "@/pages/Sites";
 import Login from "@/pages/Login";
 import Deploy from "@/pages/Deploy";
 import Deployments from "@/pages/Deployments";
@@ -47,6 +48,7 @@ function Router() {
       <Route path="/databases" component={Databases} />
       <Route path="/storage" component={Storage} />
       <Route path="/automation" component={Automation} />
+      <Route path="/sites" component={Sites} />
       <Route component={NotFound} />
     </Switch>
   );

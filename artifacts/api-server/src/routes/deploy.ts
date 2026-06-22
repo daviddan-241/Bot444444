@@ -278,3 +278,79 @@ router.post("/deploy", (_req, res) => {
 });
 
 export default router;
+
+// GET /real/sites — list all instant-hosted sites
+router.get("/real/sites", async (req, res) => {
+  if (!assertAdmin(req, res)) return;
+  try {
+    await mkdir(LOCAL_SITE_ROOT, { recursive: true });
+    const entries = await readdir(LOCAL_SITE_ROOT);
+    const origin = `${req.protocol}://${req.get("host")}`;
+    const sites = await Promise.all(entries.map(async (slug) => {
+      const dir = path.join(LOCAL_SITE_ROOT, slug);
+      const s = await stat(dir).catch(() => null);
+      if (!s?.isDirectory()) return null;
+      return { slug, url: `${origin}/api/s/${slug}/`, createdAt: s.birthtimeMs };
+    }));
+    res.json({ ok: true, sites: sites.filter(Boolean) });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: String(e) });
+  }
+});
+
+// DELETE /real/sites/:slug — remove an instant-hosted site
+router.delete("/real/sites/:slug", async (req, res) => {
+  if (!assertAdmin(req, res)) return;
+  const slug = (req.params.slug || "").replace(/[^a-z0-9-]/g, "");
+  if (!slug) { res.status(400).json({ ok: false, message: "Invalid slug" }); return; }
+  const dir = path.join(LOCAL_SITE_ROOT, slug);
+  if (!dir.startsWith(path.resolve(LOCAL_SITE_ROOT))) { res.status(403).json({ ok: false, message: "Blocked" }); return; }
+  try {
+    await rm(dir, { recursive: true, force: true });
+    res.json({ ok: true, message: `Site ${slug} deleted.` });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: String(e) });
+  }
+});
+
+// POST /real/git-instant — clone any public git URL and serve it instantly
+router.post("/real/git-instant", async (req, res) => {
+  if (!assertAdmin(req, res)) return;
+  const { url, branch = "main", name } = req.body;
+  if (!url) { res.status(400).json({ ok: false, message: "url is required." }); return; }
+  const work = await mkdtemp(path.join(tmpdir(), "nezora-git-"));
+  const commands: CommandResult[] = [];
+  try {
+    let r = await run("git", ["clone", "--depth", "1", "--branch", branch, url, "source"], work);
+    commands.push(r);
+    if (r.code !== 0) throw new Error("Git clone failed. Check the URL and branch name.");
+    const sourceDir = path.join(work, "source");
+    const files = await walk(sourceDir);
+    const packageText = await readOptional(path.join(sourceDir, "package.json"));
+    const pkg = packageText ? JSON.parse(packageText) : undefined;
+    const framework = detectFramework(files, pkg);
+    const cmds = getCommands(framework, pkg);
+    if (cmds.install !== "n/a") {
+      const [cmd, ...args] = cmds.install.split(" ");
+      r = await run(cmd, args, sourceDir); commands.push(r);
+      if (r.code !== 0) { r = await run("npm", ["install"], sourceDir); commands.push(r); }
+      if (r.code !== 0) throw new Error("Install failed.");
+    }
+    if (cmds.build !== "n/a") {
+      const [cmd, ...args] = cmds.build.split(" ");
+      r = await run(cmd, args, sourceDir); commands.push(r);
+      if (r.code !== 0) throw new Error("Build failed.");
+    }
+    const projectName = (name || url.split("/").pop() || "project").replace(/\.git$/, "");
+    const slug = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now().toString(36)}`;
+    const siteDest = path.join(LOCAL_SITE_ROOT, slug);
+    await mkdir(LOCAL_SITE_ROOT, { recursive: true });
+    await cp(path.join(sourceDir, cmds.output), siteDest, { recursive: true });
+    const origin = `${req.protocol}://${req.get("host")}`;
+    res.json({ ok: true, slug, url: `${origin}/api/s/${slug}/`, recommendation: { framework, installCommand: cmds.install, buildCommand: cmds.build }, commands, message: "Git repo cloned, built, and live." });
+  } catch (e) {
+    res.status(400).json({ ok: false, commands, message: e instanceof Error ? e.message : "Deploy failed." });
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+});

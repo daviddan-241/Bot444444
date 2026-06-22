@@ -3,7 +3,7 @@ import { Link, useLocation } from 'wouter';
 import {
   LayoutDashboard, Rocket, Box, Globe, Database, HardDrive,
   Bot, Zap, Activity, FileText, LayoutGrid, Settings, Server,
-  ChevronRight, Bell, Plus, GitBranch, Cpu, MoreHorizontal
+  Bell, Plus, GitBranch, Cpu, MoreHorizontal, Link2
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -16,6 +16,7 @@ const NAV_SECTIONS = [
     section: 'Deploy',
     items: [
       { label: 'Deploy Center', href: '/deploy', icon: Rocket },
+      { label: 'My Hosted Sites', href: '/sites', icon: Link2 },
       { label: 'Projects', href: '/projects', icon: Box },
       { label: 'Deployments', href: '/deployments', icon: GitBranch },
     ]
@@ -80,9 +81,11 @@ export function Shell({ children, title, action }: { children: ReactNode; title?
       <aside className="sidebar">
         <div style={{ padding: '16px 16px 8px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Server size={16} color="#fff" strokeWidth={2} />
-            </div>
+            <img
+              src={`${import.meta.env.BASE_URL}favicon.svg`}
+              alt="logo"
+              style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0 }}
+            />
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>Danny's Cloud</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500 }}>OS v2</div>

@@ -115,11 +115,22 @@ export default function DeployScreen() {
     // Fire request — doesn't block the UI at all
     const doFetch = async () => {
       try {
-        const body = mode === "git"
-          ? JSON.stringify({ name: n, url: gitUrl.trim(), branch: branch.trim() || "main" })
-          : JSON.stringify({ name: n, image: dockerImg.trim() });
+        let endpoint = "";
+        let body = "";
 
-        const endpoint = mode === "git" ? "/api/deploy/git" : "/api/deploy/docker";
+        if (mode === "git") {
+          endpoint = "/api/real/git-instant";
+          body = JSON.stringify({ name: n, url: gitUrl.trim(), branch: branch.trim() || "main" });
+        } else {
+          // Docker: not supported without Docker daemon — inform user
+          await updateJob(jobId, {
+            status: "failed",
+            error: "Docker deploy requires Docker on the server. Use Git deploy for public repos.",
+            finishedAt: Date.now(),
+          });
+          return;
+        }
+
         const res = await fetch(`${serverUrl}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-nezora-admin-token": token },
@@ -129,8 +140,8 @@ export default function DeployScreen() {
         await updateJob(jobId, {
           status: data?.ok ? "success" : "failed",
           url: data?.url,
-          error: data?.error,
-          logs: data?.logs,
+          error: data?.ok ? undefined : (data?.message ?? data?.error ?? "Deploy failed"),
+          logs: data?.commands?.map((c: any) => `[${c.code === 0 ? "OK" : "ERR"}] ${c.command}`) ?? data?.logs,
           finishedAt: Date.now(),
         });
       } catch (e: any) {
@@ -168,7 +179,7 @@ export default function DeployScreen() {
           style={{ paddingTop: insets.top + (Platform.OS === "web" ? 67 : 20), paddingHorizontal: 20, paddingBottom: 20 }}
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <LinearGradient colors={["#1D4ED8", "#3B82F6"]} style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" }}>
+            <LinearGradient colors={["#FF3C00", "#FF6B35"]} style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" }}>
               <Feather name="upload-cloud" size={20} color="#fff" />
             </LinearGradient>
             <View>
@@ -181,7 +192,7 @@ export default function DeployScreen() {
         {/* Active jobs pill */}
         {activeCount > 0 && (
           <View style={{ marginHorizontal: 20, marginTop: 16 }}>
-            <LinearGradient colors={["#1D4ED8", "#7C3AED"]} style={{ borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <LinearGradient colors={["#FF3C00", "#FF6B35"]} style={{ borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" }} />
               <Text style={{ flex: 1, fontSize: 14, fontWeight: "600", color: "#fff", fontFamily: "Inter_600SemiBold" }}>
                 {activeCount} deploy{activeCount > 1 ? "s" : ""} running on your server
@@ -240,7 +251,7 @@ export default function DeployScreen() {
         {/* Deploy button */}
         <View style={{ paddingHorizontal: 20, marginTop: 4 }}>
           <Pressable onPress={fireAndForget} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-            <LinearGradient colors={["#1D4ED8", "#7C3AED"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            <LinearGradient colors={["#FF3C00", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }}>
               <Feather name="zap" size={20} color="#fff" />
               <Text style={{ fontSize: 17, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>Deploy Now</Text>
             </LinearGradient>

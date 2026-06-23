@@ -16,6 +16,7 @@ import appDeployRouter from "./app-deploy";
 import processesRouter from "./processes";
 import githubRouter from "./github";
 import jobsRouter from "./jobs";
+import sitesRouter from "./sites";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(processesRouter);
 router.use(shellRouter);
 router.use(githubRouter);
 router.use(jobsRouter);
+router.use(sitesRouter);
 
 export default router;

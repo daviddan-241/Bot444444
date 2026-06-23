@@ -3,7 +3,7 @@
  * Works on: Replit, Render, Railway, Fly.io, Heroku, Vercel, any VPS, localhost.
  * Set PUBLIC_URL env var to override everything else.
  */
-export function getPublicUrl(req?: { get?: (h: string) => string; protocol?: string }): string {
+export function getPublicUrl(req?: { get?: (h: string) => string | string[] | undefined; protocol?: string }): string {
   const trim = (s: string) => s.replace(/\/+$/, "");
 
   // ── Explicit override (works on ANY host) ─────────────────────────────────
@@ -34,8 +34,10 @@ export function getPublicUrl(req?: { get?: (h: string) => string; protocol?: str
 
   // ── Request-derived (reverse-proxy-aware) ─────────────────────────────────
   if (req?.get) {
-    const host = req.get("x-forwarded-host") || req.get("host") || "";
-    const proto = (req.get("x-forwarded-proto") || req.protocol || "http").split(",")[0].trim();
+    const hostRaw = req.get("x-forwarded-host") || req.get("host") || "";
+    const host = Array.isArray(hostRaw) ? hostRaw[0] : hostRaw;
+    const protoRaw = req.get("x-forwarded-proto") || req.protocol || "http";
+    const proto = (Array.isArray(protoRaw) ? protoRaw[0] : protoRaw).split(",")[0].trim();
     if (host) return `${proto}://${host}`;
   }
 

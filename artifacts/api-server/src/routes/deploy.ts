@@ -148,7 +148,7 @@ router.post("/real/github-pages", async (req, res) => {
       ["checkout", "-b", "gh-pages"], ["add", "."], ["commit", "-m", "Deploy via Nezora"],
       ["remote", "add", "origin", remote], ["push", "--force", "origin", "gh-pages"],
     ] as const) {
-      r = await run("git", step as string[], publish);
+      r = await run("git", [...step] as string[], publish);
       commands.push({ ...r, command: r.command.replace(remote, `https://x-access-token:***@github.com/${owner}/${repo}.git`) });
       if (r.code !== 0) throw new Error(`Git failed at: ${step.join(" ")}`);
     }
@@ -258,7 +258,7 @@ router.post("/real/zip", async (req: any, res) => {
         ["checkout", "-b", branch], ["add", "."], ["commit", "-m", "Prepare Render deployment with Nezora Deploy"],
         ["remote", "add", "origin", remote], ["push", "--force", "origin", branch],
       ] as const) {
-        const r = await run("git", step as string[], sourceDir);
+        const r = await run("git", [...step] as string[], sourceDir);
         commands.push({ ...r, command: r.command.replace(remote, `https://x-access-token:***@github.com/${owner}/${repo}.git`) });
         if (r.code !== 0) throw new Error(`Git failed at: ${step.join(" ")}`);
       }
@@ -301,7 +301,7 @@ router.post("/real/zip", async (req: any, res) => {
       ["checkout", "-b", "gh-pages"], ["add", "."], ["commit", "-m", "Deploy via Nezora"],
       ["remote", "add", "origin", remote], ["push", "--force", "origin", "gh-pages"],
     ] as const) {
-      const r = await run("git", step as string[], publish);
+      const r = await run("git", [...step] as string[], publish);
       commands.push({ ...r, command: r.command.replace(remote, `https://x-access-token:***@github.com/${owner}/${repo}.git`) });
       if (r.code !== 0) throw new Error(`Git failed at: ${step.join(" ")}`);
     }

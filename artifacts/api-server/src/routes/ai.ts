@@ -80,7 +80,7 @@ async function callOpenRouter(messages: Msg[]): Promise<string> {
     signal: AbortSignal.timeout(60_000),
   });
   if (!r.ok) throw new Error(`OpenRouter ${r.status}`);
-  const d = await r.json();
+  const d = await r.json() as any;
   return d.choices?.[0]?.message?.content ?? "No response";
 }
 
@@ -94,7 +94,7 @@ async function callGroq(messages: Msg[]): Promise<string> {
     signal: AbortSignal.timeout(30_000),
   });
   if (!r.ok) throw new Error(`Groq ${r.status}`);
-  const d = await r.json();
+  const d = await r.json() as any;
   return d.choices?.[0]?.message?.content ?? "No response";
 }
 
@@ -108,7 +108,7 @@ async function callTogether(messages: Msg[]): Promise<string> {
     signal: AbortSignal.timeout(45_000),
   });
   if (!r.ok) throw new Error(`Together ${r.status}`);
-  const d = await r.json();
+  const d = await r.json() as any;
   return d.choices?.[0]?.message?.content ?? "No response";
 }
 
@@ -121,7 +121,7 @@ async function callOllama(messages: Msg[]): Promise<string> {
     signal: AbortSignal.timeout(120_000),
   });
   if (!r.ok) throw new Error(`Ollama ${r.status}`);
-  const d = await r.json();
+  const d = await r.json() as any;
   return d.message?.content ?? "No response";
 }
 

@@ -9,6 +9,7 @@ import path from "path";
 import { mkdtemp, rm, readdir, stat, cp, readFile, mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { loadSitesCatalog, saveSitesCatalog } from "./sites";
+import { detectPackageManager } from "../lib/stack-detector";
 
 const router: IRouter = Router();
 
@@ -48,14 +49,76 @@ export async function restoreApps() {
 function run(command: string, args: readonly string[], cwd: string, timeoutMs = 15 * 60 * 1000) {
   return new Promise<{ command: string; code: number; stdout: string; stderr: string }>((resolve) => {
     execFile(command, args, {
-      cwd, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024,
-      env: { ...process.env, CI: "true", NODE_ENV: "production" },
+      cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, CI: "true", NODE_ENV: "production", npm_config_user_agent: "npm" },
     }, (error, stdout, stderr) => {
       const rawCode = (error as any)?.code;
       const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
       resolve({ command: [command, ...args].join(" "), code, stdout: stdout.slice(0, 8000), stderr: (stderr || String(error?.message || "")).slice(0, 8000) });
     });
   });
+}
+
+async function runInstall(sourceDir: string, pm: string, log: (m: string) => void): Promise<void> {
+  // Strip env that blocks npm
+  const cleanEnv = { ...process.env, CI: "true", NODE_ENV: "production" };
+  delete (cleanEnv as any).npm_config_user_agent;
+
+  const tryCmd = async (cmd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
+    return new Promise((resolve) => {
+      execFile(cmd, args, {
+        cwd: sourceDir, timeout: 15 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
+        env: cleanEnv,
+      }, (error, stdout, stderr) => {
+        const rawCode = (error as any)?.code;
+        const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
+        resolve({ code, stdout: stdout.slice(0, 8000), stderr: (stderr || String(error?.message || "")).slice(0, 8000) });
+      });
+    });
+  };
+
+  // Attempt 1: use detected package manager
+  if (pm === "pnpm") {
+    log("📦 Installing dependencies (pnpm install)…");
+    const r = await tryCmd("pnpm", ["install", "--no-frozen-lockfile"]);
+    if (r.code === 0) { log("✅ Dependencies installed."); return; }
+    log(`⚠️  pnpm failed: ${(r.stderr || r.stdout).slice(0, 200)}`);
+    // Fallback: install pnpm then retry
+    log("📦 Installing pnpm globally and retrying…");
+    await tryCmd("npm", ["install", "-g", "pnpm"]);
+    const r2 = await tryCmd("pnpm", ["install", "--no-frozen-lockfile"]);
+    if (r2.code === 0) { log("✅ Dependencies installed."); return; }
+    throw new Error(`Install failed (pnpm): ${(r2.stderr || r2.stdout).slice(0, 400)}`);
+  }
+
+  if (pm === "yarn") {
+    log("📦 Installing dependencies (yarn install)…");
+    const r = await tryCmd("yarn", ["install", "--non-interactive"]);
+    if (r.code === 0) { log("✅ Dependencies installed."); return; }
+    log(`⚠️  yarn failed, falling back to npm…`);
+  }
+
+  if (pm === "bun") {
+    log("📦 Installing dependencies (bun install)…");
+    const r = await tryCmd("bun", ["install"]);
+    if (r.code === 0) { log("✅ Dependencies installed."); return; }
+    log(`⚠️  bun failed, falling back to npm…`);
+  }
+
+  // npm path with progressive fallbacks
+  log("📦 Installing dependencies (npm install)…");
+  let r = await tryCmd("npm", ["install", "--production=false"]);
+  if (r.code === 0) { log("✅ Dependencies installed."); return; }
+
+  log(`⚠️  npm install failed, trying --legacy-peer-deps…`);
+  r = await tryCmd("npm", ["install", "--legacy-peer-deps"]);
+  if (r.code === 0) { log("✅ Dependencies installed."); return; }
+
+  log(`⚠️  --legacy-peer-deps failed, trying --force…`);
+  r = await tryCmd("npm", ["install", "--force"]);
+  if (r.code === 0) { log("✅ Dependencies installed."); return; }
+
+  throw new Error(`Install failed: ${(r.stderr || r.stdout).slice(0, 500)}`);
 }
 
 async function walk(dir: string, root = dir): Promise<string[]> {
@@ -79,7 +142,6 @@ async function readOptional(file: string) {
 
 function detectFramework(files: string[], pkg?: any): string {
   const dep = (n: string) => Boolean(pkg?.dependencies?.[n] || pkg?.devDependencies?.[n]);
-  // Bots first — before static/html checks so they don't get misclassified
   if (dep("discord.js") || dep("discordjs") || dep("@discordjs/rest") || dep("discord-api-types")) return "node-server";
   if (dep("telegraf") || dep("node-telegram-bot-api") || dep("grammy") || dep("telebot")) return "node-server";
   if (dep("twitter-api-v2") || dep("twit") || dep("twitter")) return "node-server";
@@ -89,19 +151,16 @@ function detectFramework(files: string[], pkg?: any): string {
   if (dep("astro")) return "astro";
   if (dep("fastify") || dep("hapi") || dep("koa")) return "node-server";
   if (dep("express")) return "node-express";
-  // Check for bot patterns in file names regardless of package
   const filenames = files.map(f => path.basename(f).toLowerCase());
   if (filenames.some(f => ["bot.js", "bot.ts", "discord.js", "telegram.js"].includes(f))) return "node-server";
   if (files.some(f => /^(server|index|app)\.(js|ts|mjs|cjs)$/.test(f))) return "node-server";
   if (files.some(f => /requirements\.txt$/.test(f)) || files.some(f => /^(main|app|server)\.py$/.test(f))) return "python";
   if (files.some(f => /^Gemfile$/.test(f))) return "ruby";
   if (files.some(f => /^go\.mod$/.test(f))) return "go";
-  // Only detect static if there's no package.json (no server possibility)
   if (!pkg) {
     if (files.some(f => /^(index|main)\.html$/.test(f))) return "static";
     if (files.some(f => /\.(html|htm)$/.test(f))) return "static";
   }
-  // Has a package.json but no framework detected — treat as generic node server
   if (pkg) return "node-server";
   return "unknown";
 }
@@ -110,32 +169,38 @@ function isServerApp(framework: string): boolean {
   return ["node-express", "node-server", "nextjs", "python", "ruby", "go"].includes(framework);
 }
 
-function getBuildCmds(framework: string, pkg?: any) {
+function getBuildCmds(framework: string, pkg?: any, pm = "npm") {
   const s = (n: string) => pkg?.scripts?.[n];
+  const run = (script: string) => pm === "npm" ? `npm run ${script}` : pm === "pnpm" ? `pnpm run ${script}` : pm === "yarn" ? `yarn run ${script}` : `bun run ${script}`;
+  const install = pm === "pnpm" ? "pnpm install --no-frozen-lockfile" : pm === "yarn" ? "yarn install --non-interactive" : pm === "bun" ? "bun install" : "npm install --production=false --legacy-peer-deps";
   switch (framework) {
-    case "nextjs": return { install: "npm ci", build: s("build") || "next build", output: ".next" };
+    case "nextjs": return { install, build: s("build") ? run("build") : "next build", output: ".next" };
     case "react-vite": case "vue": case "astro":
-      return { install: "npm ci", build: s("build") || "vite build", output: "dist" };
+      return { install, build: s("build") ? run("build") : "vite build", output: "dist" };
     case "node-express": case "node-server":
-      return { install: "npm ci", build: s("build") || "echo no-build", output: "." };
-    case "python": return { install: "pip install -r requirements.txt", build: "echo no-build", output: "." };
+      return { install, build: s("build") ? run("build") : "echo no-build", output: "." };
+    case "python": return { install: "pip install -r requirements.txt --no-cache-dir", build: "echo no-build", output: "." };
     case "static": return { install: "n/a", build: "n/a", output: "." };
-    default: return { install: pkg ? "npm ci" : "n/a", build: s("build") || "echo no-build", output: "." };
+    default: return { install: pkg ? install : "n/a", build: s("build") ? run("build") : "echo no-build", output: "." };
   }
 }
 
-function getStartCmd(framework: string, pkg?: any, files: string[] = []): { cmd: string; args: string[] } {
+function getStartCmd(framework: string, pkg?: any, files: string[] = [], pm = "npm"): { cmd: string; args: string[] } {
   const start = pkg?.scripts?.start;
+  const pmBin = pm === "npm" ? "npm" : pm === "pnpm" ? "pnpm" : pm === "yarn" ? "yarn" : "bun";
   if (start && !start.includes("react-scripts") && !start.includes("vite")) {
-    const parts = start.split(" ");
-    return { cmd: parts[0], args: parts.slice(1) };
+    if (start.startsWith("node ") || start.startsWith("python ") || start.startsWith("deno ")) {
+      const parts = start.split(" ");
+      return { cmd: parts[0], args: parts.slice(1) };
+    }
+    return { cmd: pmBin, args: ["run", "start"] };
   }
   switch (framework) {
     case "nextjs": return { cmd: "npx", args: ["next", "start", "-p", "${PORT}"] };
     case "node-express": case "node-server": {
       const main = pkg?.main;
       if (main) return { cmd: "node", args: [main] };
-      for (const f of ["dist/index.js", "dist/server.js", "server.js", "index.js", "app.js"]) {
+      for (const f of ["dist/index.js", "dist/server.js", "server.js", "index.js", "app.js", "main.js", "bot.js"]) {
         if (files.includes(f) || files.includes(f.replace(/^dist\//, ""))) return { cmd: "node", args: [f] };
       }
       return { cmd: "node", args: ["index.js"] };
@@ -175,29 +240,32 @@ async function deployApp(opts: {
   log: (m: string) => void; origin: string;
 }) {
   const { sourceDir, name, slug, framework, files, pkg, log, origin } = opts;
-  const cmds = getBuildCmds(framework, pkg);
+
+  // Detect package manager from lockfiles in the actual source
+  const sourceFiles = await readdir(sourceDir).catch(() => [] as string[]);
+  const pm = detectPackageManager(sourceFiles);
+  log(`🔧 Package manager: ${pm}`);
+
+  const cmds = getBuildCmds(framework, pkg, pm);
 
   if (cmds.install !== "n/a") {
-    log(`📦 Installing dependencies (${cmds.install})…`);
-    const [cmd, ...args] = cmds.install.split(" ");
-    let r = await run(cmd, args, sourceDir);
-    if (r.code !== 0) {
-      log(`⚠️  ${cmd} failed, trying npm install --legacy-peer-deps…`);
-      r = await run("npm", ["install", "--legacy-peer-deps"], sourceDir);
-      if (r.code !== 0) {
-        log(`⚠️  legacy-peer-deps failed, trying npm install --force…`);
-        r = await run("npm", ["install", "--force"], sourceDir);
-        if (r.code !== 0) throw new Error(`Install failed: ${r.stderr.slice(0, 500)}`);
-      }
-    }
-    log("✅ Dependencies installed.");
+    await runInstall(sourceDir, pm, log);
   }
 
   if (cmds.build !== "n/a" && !cmds.build.startsWith("echo")) {
     log(`🔨 Building (${cmds.build})…`);
     const [cmd, ...args] = cmds.build.split(" ");
-    const r = await run(cmd, args, sourceDir);
-    if (r.code !== 0) throw new Error(`Build failed: ${r.stderr.slice(0, 500)}`);
+    const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+      execFile(cmd, args, {
+        cwd: sourceDir, timeout: 15 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
+        env: { ...process.env, CI: "true", NODE_ENV: "production" },
+      }, (error, stdout, stderr) => {
+        const rawCode = (error as any)?.code;
+        const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
+        resolve({ code, stdout: stdout.slice(0, 8000), stderr: (stderr || String(error?.message || "")).slice(0, 8000) });
+      });
+    });
+    if (result.code !== 0) throw new Error(`Build failed: ${(result.stderr || result.stdout).slice(0, 500)}`);
     log("✅ Build complete.");
   }
 
@@ -207,7 +275,7 @@ async function deployApp(opts: {
     await rm(appDest, { recursive: true, force: true });
     await cp(sourceDir, appDest, { recursive: true });
 
-    const startCmd = getStartCmd(framework, pkg, files);
+    const startCmd = getStartCmd(framework, pkg, files, pm);
     log(`🚀 Starting: ${startCmd.cmd} ${startCmd.args.join(" ")}`);
 
     await processManager.spawn({
@@ -235,27 +303,22 @@ async function deployApp(opts: {
     await rm(siteDest, { recursive: true, force: true });
     await mkdir(siteDest, { recursive: true });
     const outputSrc = cmds.output === "." ? sourceDir : path.join(sourceDir, cmds.output);
-    // Verify output dir exists before copying
     const outStat = await stat(outputSrc).catch(() => null);
     if (!outStat?.isDirectory()) {
-      // Fall back to root of sourceDir
       log(`⚠️  Output dir '${cmds.output}' not found — serving root files.`);
       await cp(sourceDir, siteDest, { recursive: true });
     } else {
       await cp(outputSrc, siteDest, { recursive: true });
     }
-    // Verify index.html exists
     const idxPath = path.join(siteDest, "index.html");
     const hasIndex = await stat(idxPath).then(s => s.isFile()).catch(() => false);
     if (!hasIndex) {
-      // Find any .html file and warn
       const allFiles = await walk(siteDest);
       const htmlFile = allFiles.find(f => f.endsWith(".html"));
       if (!htmlFile) log(`⚠️  No index.html found — files copied but site may not load.`);
       else log(`⚠️  index.html missing at root — found ${htmlFile} instead.`);
     }
     const siteUrl = `${origin}/api/s/${slug}/`;
-    // Record in sites catalog so My Hosted Sites page can list it
     const sitesCat = await loadSitesCatalog();
     sitesCat[slug] = { ...(sitesCat[slug] ?? {}), slug, name, url: siteUrl, framework, type: "static", createdAt: sitesCat[slug]?.createdAt ?? Date.now(), updatedAt: Date.now() } as any;
     await saveSitesCatalog(sitesCat).catch(() => {});
@@ -272,7 +335,6 @@ router.post("/real/app-deploy/zip", async (req: any, res) => {
   if ((file.data?.length || file.size || 0) > 200 * 1024 * 1024) {
     res.status(413).json({ ok: false, message: "ZIP too large (max 200MB)." }); return;
   }
-  // When useTempFiles:true, file.data is an empty Buffer — must read from disk
   const fileBuffer: Buffer = (file.data && file.data.length > 0)
     ? file.data
     : await readFile(file.tempFilePath);
@@ -312,14 +374,39 @@ router.post("/real/app-deploy/git", async (req, res) => {
   const customSlug = String(rawSlug || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 60);
   const slug = customSlug || `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Date.now().toString(36)}`;
   const origin = getPublicUrl(req);
-  const cloneUrl = token ? url.replace("https://", `https://x-access-token:${token}@`) : url;
+
+  // Use per-request token first, then fall back to server-level GitHub token
+  const ghToken = token || (url.includes("github.com") ? process.env.GITHUB_PERSONAL_ACCESS_TOKEN : undefined);
+  const cloneUrl = ghToken ? url.replace("https://", `https://x-access-token:${ghToken}@`) : url;
 
   const job = deployQueue.enqueue(slug, projectName, async (log) => {
     const work = await mkdtemp(path.join(tmpdir(), "nezora-app-git-"));
     try {
       log(`📡 Cloning ${url} (branch: ${branch})…`);
-      const r = await run("git", ["clone", "--depth", "1", "--branch", branch, cloneUrl, "source"], work);
+      let r = await new Promise<{ command: string; code: number; stdout: string; stderr: string }>((resolve) => {
+        execFile("git", ["clone", "--depth", "1", "--branch", branch, cloneUrl, "source"], {
+          cwd: work, timeout: 5 * 60 * 1000, maxBuffer: 32 * 1024 * 1024, env: process.env,
+        }, (error, stdout, stderr) => {
+          const rawCode = (error as any)?.code;
+          const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
+          resolve({ command: `git clone`, code, stdout: stdout.slice(0, 4000), stderr: (stderr || String(error?.message || "")).slice(0, 4000) });
+        });
+      });
+      // Retry without branch name if branch not found
+      if (r.code !== 0 && (r.stderr.includes("Remote branch") || r.stderr.includes("not found"))) {
+        log(`⚠️  Branch '${branch}' not found, trying default branch…`);
+        r = await new Promise<typeof r>((resolve) => {
+          execFile("git", ["clone", "--depth", "1", cloneUrl, "source"], {
+            cwd: work, timeout: 5 * 60 * 1000, maxBuffer: 32 * 1024 * 1024, env: process.env,
+          }, (error, stdout, stderr) => {
+            const rawCode = (error as any)?.code;
+            const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
+            resolve({ command: `git clone`, code, stdout: stdout.slice(0, 4000), stderr: (stderr || String(error?.message || "")).slice(0, 4000) });
+          });
+        });
+      }
       if (r.code !== 0) throw new Error(`Git clone failed: ${r.stderr.slice(0, 300)}`);
+
       const sourceDir = path.join(work, "source");
       const files = await walk(sourceDir);
       const packageText = await readOptional(path.join(sourceDir, "package.json"));
@@ -335,7 +422,7 @@ router.post("/real/app-deploy/git", async (req, res) => {
   res.json({ ok: true, jobId: job.id, slug, message: "Deploy queued — poll /api/real/deploy-jobs/:id for status." });
 });
 
-// GET /api/real/app-types — supported frameworks
+// GET /api/real/app-types
 router.get("/real/app-types", (_req, res) => {
   res.json({
     ok: true,
@@ -346,7 +433,7 @@ router.get("/real/app-types", (_req, res) => {
       { framework: "astro", label: "Astro", type: "static" },
       { framework: "nextjs", label: "Next.js", type: "live-app" },
       { framework: "node-express", label: "Node.js / Express", type: "live-app" },
-      { framework: "node-server", label: "Node.js Server", type: "live-app" },
+      { framework: "node-server", label: "Node.js Server / Bot", type: "live-app" },
       { framework: "python", label: "Python (Flask/FastAPI)", type: "live-app" },
     ],
   });

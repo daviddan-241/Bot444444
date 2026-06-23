@@ -6,7 +6,7 @@ import { mkdtemp, rm, mkdir, cp, readdir, writeFile, readFile } from "fs/promise
 import { tmpdir } from "os";
 import path from "path";
 import AdmZip from "adm-zip";
-import { detectStack, generateDockerfile } from "../lib/stack-detector";
+import { detectStack, generateDockerfile, detectPackageManager } from "../lib/stack-detector";
 import { processManager } from "../lib/process-manager";
 import { dockerManager } from "../lib/docker-manager";
 import { analyzeAndRepair } from "../lib/repair-engine";
@@ -16,14 +16,13 @@ import { loadProjects, saveProject } from "./projects";
 const execP = promisify(execFile);
 const router: IRouter = Router();
 
-const APPS_DIR = process.env.NEZORA_APPS_DIR ?? "/tmp/nezora-apps";
+const APPS_DIR = process.env.NEZORA_APPS_DIR ?? path.join(process.cwd(), ".nezora-apps");
 
 function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || `app-${Date.now()}`;
 }
 
 function getBaseUrl(req: Request, appSlug: string): string {
-  // Self-hosted: use ALLOWED_ORIGIN or derive from request host
   const origin = process.env.ALLOWED_ORIGIN;
   if (origin) return `${origin}/app/${appSlug}`;
   const replit = process.env.REPLIT_DEV_DOMAIN;
@@ -33,12 +32,16 @@ function getBaseUrl(req: Request, appSlug: string): string {
   return `${proto}://${host}/app/${appSlug}`;
 }
 
-async function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<{ code: number; output: string }> {
+async function runCmd(
+  cmd: string, args: string[], cwd: string,
+  env?: Record<string, string>,
+): Promise<{ code: number; output: string }> {
   return new Promise(resolve => {
+    const cleanEnv = { ...process.env, ...(env ?? {}) };
+    // Remove npm_config_user_agent so pnpm-gated preinstall scripts don't block npm
+    delete (cleanEnv as any).npm_config_user_agent;
     const proc = execFile(cmd, args, {
-      cwd,
-      env: { ...process.env, ...(env ?? {}) } as any,
-      maxBuffer: 50 * 1024 * 1024,
+      cwd, env: cleanEnv as any, maxBuffer: 50 * 1024 * 1024,
     }, (err, stdout, stderr) => {
       const output = [stdout, stderr].filter(Boolean).join("\n");
       resolve({ code: err ? (err as any).code ?? 1 : 0, output });
@@ -46,6 +49,53 @@ async function run(cmd: string, args: string[], cwd: string, env?: Record<string
     proc.stdout?.pipe(process.stdout);
     proc.stderr?.pipe(process.stderr);
   });
+}
+
+async function installDeps(dir: string, log: (msg: string) => void): Promise<void> {
+  const files = await readdir(dir).catch(() => [] as string[]);
+  const pm = detectPackageManager(files);
+
+  log(`[INSTALL] Package manager detected: ${pm}`);
+
+  if (pm === "pnpm") {
+    log("[INSTALL] Running: pnpm install --no-frozen-lockfile");
+    let r = await runCmd("pnpm", ["install", "--no-frozen-lockfile"], dir);
+    if (r.code === 0) { log("[INSTALL] Done."); return; }
+    log(`[INSTALL] pnpm failed (${r.code}), installing pnpm globally and retrying…`);
+    await runCmd("npm", ["install", "-g", "pnpm"], dir);
+    r = await runCmd("pnpm", ["install", "--no-frozen-lockfile"], dir);
+    if (r.code === 0) { log("[INSTALL] Done."); return; }
+    throw new Error(`pnpm install failed: ${r.output.slice(0, 400)}`);
+  }
+
+  if (pm === "yarn") {
+    log("[INSTALL] Running: yarn install --non-interactive");
+    const r = await runCmd("yarn", ["install", "--non-interactive"], dir);
+    if (r.code === 0) { log("[INSTALL] Done."); return; }
+    log("[INSTALL] yarn failed, falling back to npm…");
+  }
+
+  if (pm === "bun") {
+    log("[INSTALL] Running: bun install");
+    const r = await runCmd("bun", ["install"], dir);
+    if (r.code === 0) { log("[INSTALL] Done."); return; }
+    log("[INSTALL] bun failed, falling back to npm…");
+  }
+
+  // npm with progressive fallbacks
+  log("[INSTALL] Running: npm install");
+  let r = await runCmd("npm", ["install", "--production=false"], dir);
+  if (r.code === 0) { log("[INSTALL] Done."); return; }
+
+  log("[INSTALL] Trying --legacy-peer-deps…");
+  r = await runCmd("npm", ["install", "--legacy-peer-deps"], dir);
+  if (r.code === 0) { log("[INSTALL] Done."); return; }
+
+  log("[INSTALL] Trying --force…");
+  r = await runCmd("npm", ["install", "--force"], dir);
+  if (r.code === 0) { log("[INSTALL] Done."); return; }
+
+  log(`[INSTALL] Warning: install returned ${r.code} — ${r.output.slice(0, 300)}`);
 }
 
 export async function deployFromDir(
@@ -66,21 +116,16 @@ export async function deployFromDir(
   const appDir = path.join(APPS_DIR, appSlug);
   await mkdir(appDir, { recursive: true });
 
-  // Write Dockerfile if missing
   if (!stack.dockerfile) {
     const df = generateDockerfile(stack);
     await writeFile(path.join(dir, "Dockerfile.cloudos"), df);
     log("[DEPLOY] Generated Dockerfile.cloudos");
   }
 
-  // Decide deploy mode: Docker if available + not overridden, else process
   const useDocker = (opts?.mode === "docker" || (opts?.mode !== "process" && dockerManager.available));
 
   if (useDocker) {
-    // ── Docker container mode ──────────────────────────────────────────────
     log(`[DEPLOY] Docker mode — building container for ${appSlug}`);
-
-    // Copy to permanent app dir first
     await cp(dir, appDir, { recursive: true, force: true });
     log(`[DEPLOY] App files saved to ${appDir}`);
 
@@ -97,44 +142,34 @@ export async function deployFromDir(
       cpuLimit: opts?.cpuLimit,
     });
 
-    // Log Docker build output (from app.logs)
     app.logs.forEach(l => logs.push(l));
 
     if (app.status === "crashed") {
       return { ok: false, logs, stack, error: "Docker build or start failed" };
     }
 
-    // Save project
     await _saveProjectRecord(appSlug, name, url, source, stack, appDir);
     log(`[DEPLOY] Container running on host port ${app.hostPort} → ${url}`);
 
     return { ok: true, url, logs, stack };
 
   } else {
-    // ── Process mode (no Docker) ───────────────────────────────────────────
     log(`[DEPLOY] Process mode — spawning ${stack.language} process`);
 
-    // Install deps
     if (stack.installCmd) {
-      log(`[INSTALL] Running: ${stack.installCmd}`);
-      const r = await run("sh", ["-c", stack.installCmd], dir);
-      log(r.output.slice(0, 1000));
-      if (r.code !== 0) log(`[INSTALL] Warning: install returned ${r.code}`);
+      await installDeps(dir, log);
     }
 
-    // Build
     if (stack.buildCmd) {
       log(`[BUILD] Running: ${stack.buildCmd}`);
-      const r = await run("sh", ["-c", stack.buildCmd], dir);
+      const r = await runCmd("sh", ["-c", stack.buildCmd], dir);
       log(r.output.slice(0, 2000));
       if (r.code !== 0) {
-        // If there are HTML files, fall back to serving as static instead of failing
         let hasHtml = false;
         try {
           const topLevel = await readdir(dir);
           hasHtml = topLevel.some(f => /\.html$/i.test(f));
           if (!hasHtml) {
-            // Check one level deep (e.g. public/index.html)
             for (const entry of topLevel) {
               try {
                 const sub = await readdir(path.join(dir, entry));
@@ -145,7 +180,7 @@ export async function deployFromDir(
         } catch {}
         if (hasHtml) {
           log("[BUILD] Build failed — HTML files found, switching to static serve mode");
-          stack.buildCmd = undefined;
+          stack.buildCmd = null;
           stack.startCmd = `npx serve -s . -l $PORT 2>/dev/null || python3 -m http.server $PORT`;
           stack.framework = "static";
         } else {
@@ -154,11 +189,9 @@ export async function deployFromDir(
       }
     }
 
-    // Copy to permanent app dir
     await cp(dir, appDir, { recursive: true, force: true });
     log(`[DEPLOY] App files saved to ${appDir}`);
 
-    // Spawn process
     const port = await processManager.findFreePort();
     const url = getBaseUrl(req, appSlug);
     await processManager.spawn({
@@ -170,7 +203,6 @@ export async function deployFromDir(
     });
     log(`[DEPLOY] Process started on port ${port} → ${url}`);
 
-    // Save project
     await _saveProjectRecord(appSlug, name, url, source, stack, appDir, port);
 
     return { ok: true, url, logs, stack };
@@ -201,7 +233,7 @@ async function _saveProjectRecord(
   await saveProject(projects);
 }
 
-// ─── Deploy from ZIP ─────────────────────────────────────────────────────────
+// ─── Deploy from ZIP ──────────────────────────────────────────────────────────
 router.post("/deploy/zip", async (req: Request, res: Response) => {
   if (!assertAdmin(req, res)) return;
   const file = req.files?.file as UploadedFile | undefined;
@@ -242,15 +274,17 @@ router.post("/deploy/git", async (req: Request, res: Response) => {
   const work = await mkdtemp(path.join(tmpdir(), "cloudos-git-"));
   try {
     const name = appName || repoUrl.split("/").pop()?.replace(/\.git$/, "") || "myapp";
-    // Use GitHub token if set and repo is on GitHub
+
+    // Use server-level GitHub token for GitHub repos
     const ghToken = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
     const cloneUrl = ghToken && repoUrl.includes("github.com")
-      ? repoUrl.replace("https://", `https://${ghToken}@`)
+      ? repoUrl.replace("https://", `https://x-access-token:${ghToken}@`)
       : repoUrl;
 
-    const r = await run("git", ["clone", "--depth=1", "--branch", branch, cloneUrl, "repo"], work);
+    let r = await runCmd("git", ["clone", "--depth=1", "--branch", branch, cloneUrl, "repo"], work);
     if (r.code !== 0) {
-      const r2 = await run("git", ["clone", "--depth=1", cloneUrl, "repo"], work);
+      // Retry without branch (auto-detect default branch)
+      const r2 = await runCmd("git", ["clone", "--depth=1", cloneUrl, "repo"], work);
       if (r2.code !== 0) {
         res.status(400).json({ ok: false, error: `git clone failed: ${r2.output.slice(0, 300)}`, logs: [r2.output] });
         return;
@@ -318,8 +352,7 @@ router.post("/deploy/repair", async (req: Request, res: Response) => {
 // ─── Process/container control ────────────────────────────────────────────────
 router.post("/processes/:id/start", async (req: Request, res: Response) => {
   if (!assertAdmin(req, res)) return;
-  const id = req.params.id;
-  // Try Docker first, then process manager
+  const id = String(req.params.id);
   if (dockerManager.available && dockerManager.get(id)) {
     res.json({ ok: await dockerManager.startApp(id), mode: "docker" });
   } else {
@@ -329,7 +362,7 @@ router.post("/processes/:id/start", async (req: Request, res: Response) => {
 
 router.post("/processes/:id/stop", async (req: Request, res: Response) => {
   if (!assertAdmin(req, res)) return;
-  const id = req.params.id;
+  const id = String(req.params.id);
   if (dockerManager.available && dockerManager.get(id)) {
     res.json({ ok: await dockerManager.stopApp(id), mode: "docker" });
   } else {
@@ -339,7 +372,7 @@ router.post("/processes/:id/stop", async (req: Request, res: Response) => {
 
 router.post("/processes/:id/restart", async (req: Request, res: Response) => {
   if (!assertAdmin(req, res)) return;
-  const id = req.params.id;
+  const id = String(req.params.id);
   if (dockerManager.available && dockerManager.get(id)) {
     res.json({ ok: await dockerManager.restartApp(id), mode: "docker" });
   } else {
@@ -349,7 +382,7 @@ router.post("/processes/:id/restart", async (req: Request, res: Response) => {
 
 router.delete("/processes/:id", async (req: Request, res: Response) => {
   if (!assertAdmin(req, res)) return;
-  const id = req.params.id;
+  const id = String(req.params.id);
   if (dockerManager.available && dockerManager.get(id)) {
     await dockerManager.removeApp(id);
   } else {
@@ -367,7 +400,7 @@ router.get("/processes", (_req: Request, res: Response) => {
 
 router.get("/processes/:id/logs", (req: Request, res: Response) => {
   const tail = parseInt((req.query.tail as string) || "100");
-  const id = req.params.id;
+  const id = String(req.params.id);
   if (dockerManager.available && dockerManager.get(id)) {
     res.json({ ok: true, logs: dockerManager.getLogs(id, tail), mode: "docker" });
   } else {
@@ -380,16 +413,16 @@ router.get("/containers", (_req: Request, res: Response) => {
   res.json({ ok: true, available: dockerManager.available, containers: dockerManager.list() });
 });
 
-router.post("/containers/:id/start",  async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.startApp(req.params.id) }); });
-router.post("/containers/:id/stop",   async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.stopApp(req.params.id) }); });
-router.post("/containers/:id/restart",async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.restartApp(req.params.id) }); });
-router.delete("/containers/:id",      async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.removeApp(req.params.id) }); });
-router.get("/containers/:id/logs",    (req: Request, res: Response) => {
+router.post("/containers/:id/start",   async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.startApp(String(req.params.id)) }); });
+router.post("/containers/:id/stop",    async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.stopApp(String(req.params.id)) }); });
+router.post("/containers/:id/restart", async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.restartApp(String(req.params.id)) }); });
+router.delete("/containers/:id",       async (req: Request, res: Response) => { if (!assertAdmin(req, res)) return; res.json({ ok: await dockerManager.removeApp(String(req.params.id)) }); });
+router.get("/containers/:id/logs", (req: Request, res: Response) => {
   const tail = parseInt((req.query.tail as string) || "100");
-  res.json({ ok: true, logs: dockerManager.getLogs(req.params.id, tail) });
+  res.json({ ok: true, logs: dockerManager.getLogs(String(req.params.id), tail) });
 });
-router.get("/containers/:id/stats",   async (req: Request, res: Response) => {
-  const stats = await dockerManager.getContainerStats(req.params.id);
+router.get("/containers/:id/stats", async (req: Request, res: Response) => {
+  const stats = await dockerManager.getContainerStats(String(req.params.id));
   res.json({ ok: !!stats, stats });
 });
 

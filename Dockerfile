@@ -12,7 +12,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY lib/ ./lib/
 COPY artifacts/nezora/package.json ./artifacts/nezora/
 
-RUN pnpm install --frozen-lockfile --filter @workspace/nezora...
+RUN pnpm install --no-frozen-lockfile --filter @workspace/nezora...
 
 COPY artifacts/nezora/ ./artifacts/nezora/
 
@@ -30,7 +30,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY lib/ ./lib/
 COPY artifacts/api-server/package.json ./artifacts/api-server/
 
-RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
+RUN pnpm install --no-frozen-lockfile --filter @workspace/api-server...
 
 COPY artifacts/api-server/ ./artifacts/api-server/
 

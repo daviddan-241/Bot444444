@@ -16,14 +16,14 @@ router.get("/jobs", (_req: Request, res: Response) => {
 
 // ── Get single job ────────────────────────────────────────────────────────────
 router.get("/jobs/:id", (req: Request, res: Response) => {
-  const job = deployQueue.get(req.params.id);
+  const job = deployQueue.get(String(req.params.id));
   if (!job) { res.status(404).json({ ok: false, error: "Job not found" }); return; }
   res.json({ ok: true, job });
 });
 
 // ── SSE stream for a job ──────────────────────────────────────────────────────
 router.get("/jobs/:id/stream", (req: Request, res: Response) => {
-  const job = deployQueue.get(req.params.id);
+  const job = deployQueue.get(String(req.params.id));
   if (!job) { res.status(404).json({ ok: false, error: "Job not found" }); return; }
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -75,10 +75,15 @@ router.get("/jobs/:id/stream", (req: Request, res: Response) => {
 // ── Enqueue Git deploy job (returns immediately with jobId) ───────────────────
 router.post("/jobs/git", async (req: Request, res: Response) => {
   if (!assertAdmin(req, res)) return;
-  const { url: repoUrl, branch = "main", name: appName, mode, memLimit, cpuLimit, restartPolicy } = req.body as {
-    url: string; branch?: string; name?: string;
-    mode?: "process" | "docker"; memLimit?: string; cpuLimit?: string; restartPolicy?: string;
+  const body = req.body as {
+    url: string | string[]; branch?: string | string[]; name?: string | string[];
+    mode?: string; memLimit?: string; cpuLimit?: string; restartPolicy?: string;
   };
+  const repoUrl = Array.isArray(body.url) ? body.url[0] : body.url;
+  const branch = Array.isArray(body.branch) ? body.branch[0] : (body.branch ?? "main");
+  const appName = Array.isArray(body.name) ? body.name[0] : body.name;
+  const mode = body.mode as "process" | "docker" | undefined;
+  const memLimit = body.memLimit; const cpuLimit = body.cpuLimit; const restartPolicy = body.restartPolicy;
   if (!repoUrl) { res.status(400).json({ ok: false, error: "url required" }); return; }
 
   const name = appName || repoUrl.split("/").pop()?.replace(/\.git$/, "") || "app";

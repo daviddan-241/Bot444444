@@ -304,7 +304,8 @@ class DockerManager extends EventEmitter {
       const id = match[1];
       if (this.apps.has(id)) continue;
       // Re-attach from running container
-      const port = this._parseHostPort(c.id);
+      const resolvedPort = await this._parseHostPort(c.id);
+      const hostPort = resolvedPort ?? (await this.allocatePort()) ?? 0;
       const app: DockerApp = {
         id,
         name: c.name.replace("cloudos-", ""),
@@ -313,11 +314,11 @@ class DockerManager extends EventEmitter {
         restarts: 0,
         logs: [],
         port: 3000,
-        hostPort: port ?? await this.allocatePort(),
+        hostPort,
         appDir: path.join(APPS_DIR, id),
         env: {},
       };
-      if (port) this.usedPorts.add(port);
+      if (hostPort) this.usedPorts.add(hostPort);
       this.apps.set(id, app);
     }
   }

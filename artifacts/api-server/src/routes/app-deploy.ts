@@ -234,6 +234,23 @@ function safeExtract(zipBuffer: Buffer, dest: string) {
   zip.extractAllTo(dest, true);
 }
 
+/** Copy directory recursively, skipping node_modules and .git to save time. */
+async function cpExcludeNodeModules(src: string, dest: string): Promise<void> {
+  const SKIP = new Set(["node_modules", ".git", ".pnp", ".yarn/cache", ".yarn/unplugged"]);
+  await mkdir(dest, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  await Promise.all(entries.map(async (entry) => {
+    if (SKIP.has(entry.name)) return;
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await cpExcludeNodeModules(srcPath, destPath);
+    } else {
+      await cp(srcPath, destPath);
+    }
+  }));
+}
+
 async function deployApp(opts: {
   sourceDir: string; name: string; slug: string;
   framework: string; files: string[]; pkg?: any;
@@ -248,32 +265,38 @@ async function deployApp(opts: {
 
   const cmds = getBuildCmds(framework, pkg, pm);
 
-  if (cmds.install !== "n/a") {
-    await runInstall(sourceDir, pm, log);
-  }
-
-  if (cmds.build !== "n/a" && !cmds.build.startsWith("echo")) {
-    log(`🔨 Building (${cmds.build})…`);
-    const [cmd, ...args] = cmds.build.split(" ");
-    const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-      execFile(cmd, args, {
-        cwd: sourceDir, timeout: 15 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
-        env: { ...process.env, CI: "true", NODE_ENV: "production" },
-      }, (error, stdout, stderr) => {
-        const rawCode = (error as any)?.code;
-        const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
-        resolve({ code, stdout: stdout.slice(0, 8000), stderr: (stderr || String(error?.message || "")).slice(0, 8000) });
-      });
-    });
-    if (result.code !== 0) throw new Error(`Build failed: ${(result.stderr || result.stdout).slice(0, 500)}`);
-    log("✅ Build complete.");
-  }
-
   if (isServerApp(framework)) {
+    // ── LIVE APP PATH ────────────────────────────────────────────────────────
+    // Copy source → final destination FIRST, then install+build there.
+    // This guarantees node_modules is always in the directory where the app runs.
     const appDest = path.join(APP_ROOT, slug);
     await mkdir(APP_ROOT, { recursive: true });
     await rm(appDest, { recursive: true, force: true });
-    await cp(sourceDir, appDest, { recursive: true });
+
+    log(`📁 Copying source files…`);
+    // Copy source without node_modules (it isn't there yet — install runs next)
+    await cpExcludeNodeModules(sourceDir, appDest);
+
+    if (cmds.install !== "n/a") {
+      await runInstall(appDest, pm, log);
+    }
+
+    if (cmds.build !== "n/a" && !cmds.build.startsWith("echo")) {
+      log(`🔨 Building (${cmds.build})…`);
+      const [cmd, ...args] = cmds.build.split(" ");
+      const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+        execFile(cmd, args, {
+          cwd: appDest, timeout: 15 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
+          env: { ...process.env, CI: "true", NODE_ENV: "production" },
+        }, (error, stdout, stderr) => {
+          const rawCode = (error as any)?.code;
+          const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
+          resolve({ code, stdout: stdout.slice(0, 8000), stderr: (stderr || String(error?.message || "")).slice(0, 8000) });
+        });
+      });
+      if (result.code !== 0) throw new Error(`Build failed: ${(result.stderr || result.stdout).slice(0, 500)}`);
+      log("✅ Build complete.");
+    }
 
     const startCmd = getStartCmd(framework, pkg, files, pm);
     log(`🚀 Starting: ${startCmd.cmd} ${startCmd.args.join(" ")}`);

@@ -22,6 +22,23 @@ function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || `app-${Date.now()}`;
 }
 
+/** Recursively copy src → dest, skipping specified directory names. */
+async function cpDirExclude(src: string, dest: string, skip: string[]): Promise<void> {
+  const skipSet = new Set(skip);
+  await mkdir(dest, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  await Promise.all(entries.map(async (entry) => {
+    if (skipSet.has(entry.name)) return;
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await cpDirExclude(srcPath, destPath, skip);
+    } else {
+      await cp(srcPath, destPath);
+    }
+  }));
+}
+
 function getBaseUrl(req: Request, appSlug: string): string {
   const origin = process.env.ALLOWED_ORIGIN;
   if (origin) return `${origin}/app/${appSlug}`;
@@ -156,23 +173,30 @@ export async function deployFromDir(
   } else {
     log(`[DEPLOY] Process mode — spawning ${stack.language} process`);
 
+    // Copy source to final appDir FIRST (excluding node_modules).
+    // Then install + build inside appDir so node_modules is always
+    // present in the directory where the process runs.
+    log(`[DEPLOY] Copying source to ${appDir}…`);
+    await cpDirExclude(dir, appDir, ["node_modules", ".git"]);
+    log(`[DEPLOY] App files saved to ${appDir}`);
+
     if (stack.installCmd) {
-      await installDeps(dir, log);
+      await installDeps(appDir, log);
     }
 
     if (stack.buildCmd) {
       log(`[BUILD] Running: ${stack.buildCmd}`);
-      const r = await runCmd("sh", ["-c", stack.buildCmd], dir);
+      const r = await runCmd("sh", ["-c", stack.buildCmd], appDir);
       log(r.output.slice(0, 2000));
       if (r.code !== 0) {
         let hasHtml = false;
         try {
-          const topLevel = await readdir(dir);
+          const topLevel = await readdir(appDir);
           hasHtml = topLevel.some(f => /\.html$/i.test(f));
           if (!hasHtml) {
             for (const entry of topLevel) {
               try {
-                const sub = await readdir(path.join(dir, entry));
+                const sub = await readdir(path.join(appDir, entry));
                 if (sub.some(f => /\.html$/i.test(f))) { hasHtml = true; break; }
               } catch {}
             }
@@ -188,9 +212,6 @@ export async function deployFromDir(
         }
       }
     }
-
-    await cp(dir, appDir, { recursive: true, force: true });
-    log(`[DEPLOY] App files saved to ${appDir}`);
 
     const port = await processManager.findFreePort();
     const url = getBaseUrl(req, appSlug);

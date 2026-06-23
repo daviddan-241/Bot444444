@@ -213,10 +213,30 @@ async function deployApp(opts: {
   } else {
     const { LOCAL_SITE_ROOT } = await import("./static-serve");
     const siteDest = path.join(LOCAL_SITE_ROOT, slug);
-    await mkdir(LOCAL_SITE_ROOT, { recursive: true });
+    log(`📁 Copying files to site store…`);
+    await mkdir(siteDest, { recursive: true });
     await rm(siteDest, { recursive: true, force: true });
-    const outputSrc = path.join(sourceDir, cmds.output);
-    await cp(outputSrc, siteDest, { recursive: true });
+    await mkdir(siteDest, { recursive: true });
+    const outputSrc = cmds.output === "." ? sourceDir : path.join(sourceDir, cmds.output);
+    // Verify output dir exists before copying
+    const outStat = await stat(outputSrc).catch(() => null);
+    if (!outStat?.isDirectory()) {
+      // Fall back to root of sourceDir
+      log(`⚠️  Output dir '${cmds.output}' not found — serving root files.`);
+      await cp(sourceDir, siteDest, { recursive: true });
+    } else {
+      await cp(outputSrc, siteDest, { recursive: true });
+    }
+    // Verify index.html exists
+    const idxPath = path.join(siteDest, "index.html");
+    const hasIndex = await stat(idxPath).then(s => s.isFile()).catch(() => false);
+    if (!hasIndex) {
+      // Find any .html file and warn
+      const allFiles = await walk(siteDest);
+      const htmlFile = allFiles.find(f => f.endsWith(".html"));
+      if (!htmlFile) log(`⚠️  No index.html found — files copied but site may not load.`);
+      else log(`⚠️  index.html missing at root — found ${htmlFile} instead.`);
+    }
     const siteUrl = `${origin}/api/s/${slug}/`;
     log(`✅ Static site live at ${siteUrl}`);
     return { type: "static-site", slug, url: siteUrl, framework };
@@ -231,9 +251,13 @@ router.post("/real/app-deploy/zip", async (req: any, res) => {
   if ((file.data?.length || file.size || 0) > 200 * 1024 * 1024) {
     res.status(413).json({ ok: false, message: "ZIP too large (max 200MB)." }); return;
   }
-  const fileBuffer: Buffer = file.data ?? await readFile(file.tempFilePath);
+  // When useTempFiles:true, file.data is an empty Buffer — must read from disk
+  const fileBuffer: Buffer = (file.data && file.data.length > 0)
+    ? file.data
+    : await readFile(file.tempFilePath);
   const projectName = String(req.body?.name || file.name?.replace(/\.zip$/i, "") || "app");
-  const slug = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Date.now().toString(36)}`;
+  const customSlug = String(req.body?.slug || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 60);
+  const slug = customSlug || `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Date.now().toString(36)}`;
   const origin = getPublicUrl(req);
 
   const job = deployQueue.enqueue(slug, projectName, async (log) => {
@@ -261,10 +285,11 @@ router.post("/real/app-deploy/zip", async (req: any, res) => {
 // POST /api/real/app-deploy/git
 router.post("/real/app-deploy/git", async (req, res) => {
   if (!assertAdmin(req, res)) return;
-  const { url, branch = "main", name, token } = req.body;
+  const { url, branch = "main", name, token, slug: rawSlug } = req.body;
   if (!url) { res.status(400).json({ ok: false, message: "url is required." }); return; }
   const projectName = name || url.split("/").pop()?.replace(/\.git$/, "") || "app";
-  const slug = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Date.now().toString(36)}`;
+  const customSlug = String(rawSlug || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 60);
+  const slug = customSlug || `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${Date.now().toString(36)}`;
   const origin = getPublicUrl(req);
   const cloneUrl = token ? url.replace("https://", `https://x-access-token:${token}@`) : url;
 

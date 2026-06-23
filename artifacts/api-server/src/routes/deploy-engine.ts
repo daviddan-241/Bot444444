@@ -128,7 +128,29 @@ async function deployFromDir(
       const r = await run("sh", ["-c", stack.buildCmd], dir);
       log(r.output.slice(0, 2000));
       if (r.code !== 0) {
-        return { ok: false, logs, stack, error: `Build failed: ${r.output.slice(0, 500)}` };
+        // If there are HTML files, fall back to serving as static instead of failing
+        let hasHtml = false;
+        try {
+          const topLevel = await readdir(dir);
+          hasHtml = topLevel.some(f => /\.html$/i.test(f));
+          if (!hasHtml) {
+            // Check one level deep (e.g. public/index.html)
+            for (const entry of topLevel) {
+              try {
+                const sub = await readdir(path.join(dir, entry));
+                if (sub.some(f => /\.html$/i.test(f))) { hasHtml = true; break; }
+              } catch {}
+            }
+          }
+        } catch {}
+        if (hasHtml) {
+          log("[BUILD] Build failed — HTML files found, switching to static serve mode");
+          stack.buildCmd = undefined;
+          stack.startCmd = `npx serve -s . -l $PORT 2>/dev/null || python3 -m http.server $PORT`;
+          stack.framework = "static";
+        } else {
+          return { ok: false, logs, stack, error: `Build failed: ${r.output.slice(0, 500)}` };
+        }
       }
     }
 

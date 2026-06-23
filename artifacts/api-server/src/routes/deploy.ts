@@ -117,23 +117,32 @@ router.post("/real/github-pages", async (req, res) => {
       commands.push({ command: "nezora-auto-fix next-static-export", code: 0, stdout: "Wrote next.config.mjs with output: 'export'.", stderr: "" });
     }
 
+    let buildOutput = cmds.output;
     if (cmds.install !== "n/a") {
       const [cmd, ...args] = cmds.install.split(" ");
       r = await run(cmd, args, source); commands.push(r);
       if (r.code !== 0) { r = await run("npm", ["install"], source); commands.push({ ...r, command: "npm install # fallback" }); }
-      if (r.code !== 0) throw new Error("Install failed.");
+      if (r.code !== 0) commands.push({ command: "install-warn", code: 0, stdout: "Install had errors — attempting build anyway", stderr: "" });
     }
     if (cmds.build !== "n/a") {
       const [cmd, ...args] = cmds.build.split(" ");
       r = await run(cmd, args, source); commands.push(r);
-      if (r.code !== 0) throw new Error("Build failed.");
+      if (r.code !== 0) {
+        const hasHtml = files.some(f => /\.html$/i.test(f));
+        if (hasHtml) {
+          buildOutput = ".";
+          commands.push({ command: "nezora-auto: static fallback", code: 0, stdout: "Build failed — HTML files found, serving static files directly", stderr: "" });
+        } else {
+          throw new Error(`Build failed: ${(r.stderr || r.stdout || "no output").slice(0, 300)}`);
+        }
+      }
     }
 
     const publish = path.join(work, "publish");
     await mkdir(publish, { recursive: true });
     await run("git", ["init"], publish);
     await writeFile(path.join(publish, ".nojekyll"), "");
-    await cp(path.join(source, cmds.output), publish, { recursive: true });
+    await cp(path.join(source, buildOutput), publish, { recursive: true });
     for (const step of [
       ["config", "user.email", "deploy@nezora.local"], ["config", "user.name", "Nezora Deploy"],
       ["checkout", "-b", "gh-pages"], ["add", "."], ["commit", "-m", "Deploy via Nezora"],
@@ -202,18 +211,27 @@ router.post("/real/zip", async (req: any, res) => {
       const framework = detectFramework(files, pkg);
       const cmds = getCommands(framework, pkg);
       const commands: CommandResult[] = [];
+      let buildOutput3 = cmds.output;
       if (cmds.install !== "n/a") {
         const [cmd, ...args] = cmds.install.split(" ");
         let r = await run(cmd, args, sourceDir); commands.push(r);
         if (r.code !== 0) { r = await run("npm", ["install"], sourceDir); commands.push(r); }
-        if (r.code !== 0) throw new Error("Install failed.");
+        if (r.code !== 0) commands.push({ command: "install-warn", code: 0, stdout: "Install had errors — attempting build anyway", stderr: "" });
       }
       if (cmds.build !== "n/a") {
         const [cmd, ...args] = cmds.build.split(" ");
-        const r = await run(cmd, args, sourceDir); commands.push(r);
-        if (r.code !== 0) throw new Error("Build failed.");
+        const br = await run(cmd, args, sourceDir); commands.push(br);
+        if (br.code !== 0) {
+          const hasHtml = files.some(f => /\.html$/i.test(f));
+          if (hasHtml) {
+            buildOutput3 = ".";
+            commands.push({ command: "nezora-auto: static fallback", code: 0, stdout: "Build failed — serving static HTML files directly", stderr: "" });
+          } else {
+            throw new Error(`Build failed: ${(br.stderr || br.stdout || "no output").slice(0, 300)}`);
+          }
+        }
       }
-      await cp(path.join(sourceDir, cmds.output), siteDest, { recursive: true });
+      await cp(path.join(sourceDir, buildOutput3), siteDest, { recursive: true });
       const origin = `${req.protocol}://${req.get("host")}`;
       res.json({ ok: true, slug, url: `${origin}/api/s/${slug}/`, recommendation: { framework, installCommand: cmds.install, buildCommand: cmds.build, startCommand: "n/a", outputDirectory: cmds.output }, commands, message: "Temporary no-API static URL is live." });
       return;
@@ -254,21 +272,30 @@ router.post("/real/zip", async (req: any, res) => {
     const pkg = packageText ? JSON.parse(packageText) : undefined;
     const framework = detectFramework(files, pkg);
     const cmds = getCommands(framework, pkg);
+    let buildOutput4 = cmds.output;
     if (cmds.install !== "n/a") {
       const [cmd, ...args] = cmds.install.split(" ");
       let r = await run(cmd, args, sourceDir); commands.push(r);
       if (r.code !== 0) { r = await run("npm", ["install"], sourceDir); commands.push(r); }
-      if (r.code !== 0) throw new Error("Install failed.");
+      if (r.code !== 0) commands.push({ command: "install-warn", code: 0, stdout: "Install had errors — attempting build anyway", stderr: "" });
     }
     if (cmds.build !== "n/a") {
       const [cmd, ...args] = cmds.build.split(" ");
-      const r = await run(cmd, args, sourceDir); commands.push(r);
-      if (r.code !== 0) throw new Error("Build failed.");
+      const br = await run(cmd, args, sourceDir); commands.push(br);
+      if (br.code !== 0) {
+        const hasHtml = files.some(f => /\.html$/i.test(f));
+        if (hasHtml) {
+          buildOutput4 = ".";
+          commands.push({ command: "nezora-auto: static fallback", code: 0, stdout: "Build failed — serving static HTML files directly", stderr: "" });
+        } else {
+          throw new Error(`Build failed: ${(br.stderr || br.stdout || "no output").slice(0, 300)}`);
+        }
+      }
     }
     const publish = path.join(work, "publish");
     await mkdir(publish, { recursive: true });
     await writeFile(path.join(publish, ".nojekyll"), "");
-    await cp(path.join(sourceDir, cmds.output), publish, { recursive: true });
+    await cp(path.join(sourceDir, buildOutput4), publish, { recursive: true });
     for (const step of [
       ["init"], ["config", "user.email", "deploy@nezora.local"], ["config", "user.name", "Nezora Deploy"],
       ["checkout", "-b", "gh-pages"], ["add", "."], ["commit", "-m", "Deploy via Nezora"],

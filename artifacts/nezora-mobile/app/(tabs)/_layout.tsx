@@ -63,6 +63,30 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="builder"
+        options={{
+          title: "Builder",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="wrench.and.screwdriver" tintColor={color} size={22} />
+            ) : (
+              <Feather name="tool" size={21} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="code"
+        options={{
+          title: "Code",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="chevron.left.slash.chevron.right" tintColor={color} size={22} />
+            ) : (
+              <Feather name="code" size={21} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
         name="deploy"
         options={{
           title: "Deploy",
@@ -70,41 +94,9 @@ export default function TabLayout() {
           tabBarBadgeStyle: { backgroundColor: "#3B82F6", fontSize: 10 },
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView
-                name="arrow.up.circle"
-                tintColor={color}
-                size={22}
-              />
+              <SymbolView name="arrow.up.circle" tintColor={color} size={22} />
             ) : (
               <Feather name="upload-cloud" size={21} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="apps"
-        options={{
-          title: "Apps",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView
-                name="rectangle.3.group"
-                tintColor={color}
-                size={22}
-              />
-            ) : (
-              <Feather name="box" size={21} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="ai"
-        options={{
-          title: "AI",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="sparkles" tintColor={color} size={22} />
-            ) : (
-              <Feather name="cpu" size={21} color={color} />
             ),
         }}
       />
@@ -120,6 +112,9 @@ export default function TabLayout() {
             ),
         }}
       />
+      {/* Hide old tabs that no longer exist */}
+      <Tabs.Screen name="apps" options={{ href: null }} />
+      <Tabs.Screen name="ai" options={{ href: null }} />
     </Tabs>
   );
 }

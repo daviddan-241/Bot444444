@@ -48,12 +48,12 @@ function GradientCard({ title, sub, iconName, gradientA, gradientB, onPress }: {
       <LinearGradient
         colors={[gradientA, gradientB]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-        style={{ borderRadius: 20, padding: 20, minHeight: 110, justifyContent: "space-between" }}
+        style={{ borderRadius: 22, padding: 20, minHeight: 120, justifyContent: "space-between" }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center" }}>
+          <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center" }}>
             {/* @ts-ignore */}
-            <Feather name={iconName} size={18} color="#fff" />
+            <Feather name={iconName} size={20} color="#fff" />
           </View>
           <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" }}>
             <Feather name="arrow-right" size={14} color="#fff" />
@@ -161,21 +161,16 @@ export default function DashboardScreen() {
               </LinearGradient>
               <View>
                 <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>DANNY'S</Text>
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Cloud OS</Text>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Cloud</Text>
               </View>
             </View>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <Pressable onPress={() => load(true)} style={({ pressed }) => ({ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.card, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.5 : 1 })}>
-                <Feather name="refresh-cw" size={17} color={colors.mutedForeground} />
-              </Pressable>
-              <Pressable style={({ pressed }) => ({ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.card, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.5 : 1 })}>
-                <Feather name="bell" size={17} color={colors.mutedForeground} />
-              </Pressable>
-            </View>
+            <Pressable style={({ pressed }) => ({ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.card, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.5 : 1 })}>
+              <Feather name="bell" size={17} color={colors.mutedForeground} />
+            </Pressable>
           </View>
-          <Text style={{ fontSize: 26, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginTop: 20 }}>Dashboard</Text>
+          <Text style={{ fontSize: 28, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginTop: 20 }}>Dashboard</Text>
           <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-            {stats?.uptime?.pretty ? `Up ${stats.uptime.pretty}` : "Live monitoring"}
+            {stats?.uptime?.pretty ? `Up ${stats.uptime.pretty}` : "Live monitoring active"}
           </Text>
         </LinearGradient>
 
@@ -200,15 +195,43 @@ export default function DashboardScreen() {
           <StatPill label="Workers" value={String(workers.length)} color="#06B6D4" />
         </View>
 
-        {/* Feature cards 2×2 */}
+        {/* Feature tiles 2×2 — matching reference image */}
         <View style={{ paddingHorizontal: 20, marginTop: 20, gap: 12 }}>
           <View style={{ flexDirection: "row", gap: 12 }}>
-            <GradientCard title="AI Assistant" sub="Ask anything" iconName="cpu" gradientA="#3B82F6" gradientB="#8B5CF6" onPress={() => router.push("/(tabs)/ai")} />
-            <GradientCard title="Deploy" sub="Launch your app" iconName="upload-cloud" gradientA="#1D4ED8" gradientB="#3B82F6" onPress={() => router.push("/(tabs)/deploy")} />
+            <GradientCard
+              title="AI Assistant"
+              sub="Ask anything"
+              iconName="sun"
+              gradientA="#3B82F6"
+              gradientB="#8B5CF6"
+              onPress={() => router.push("/(tabs)/code")}
+            />
+            <GradientCard
+              title="Collaboration"
+              sub="Work together"
+              iconName="users"
+              gradientA="#1D4ED8"
+              gradientB="#3B82F6"
+              onPress={() => router.push("/(tabs)/builder")}
+            />
           </View>
           <View style={{ flexDirection: "row", gap: 12 }}>
-            <GradientCard title="Monitoring" sub={`CPU ${cpu}%`} iconName="activity" gradientA="#7C3AED" gradientB="#3B82F6" onPress={() => {}} />
-            <GradientCard title="Apps" sub={`${projects.length} deployed`} iconName="box" gradientA="#0891B2" gradientB="#7C3AED" onPress={() => router.push("/(tabs)/apps")} />
+            <GradientCard
+              title="Analytics"
+              sub={`CPU ${cpu}% · RAM ${ram}%`}
+              iconName="bar-chart-2"
+              gradientA="#7C3AED"
+              gradientB="#3B82F6"
+              onPress={() => {}}
+            />
+            <GradientCard
+              title="Security"
+              sub="All systems secure"
+              iconName="shield"
+              gradientA="#6D28D9"
+              gradientB="#8B5CF6"
+              onPress={() => router.push("/(tabs)/settings")}
+            />
           </View>
         </View>
 
@@ -220,14 +243,6 @@ export default function DashboardScreen() {
             <MiniBar label="RAM" pct={ram} color={ram > 80 ? "#FF9F0A" : "#30D158"} />
             <MiniBar label="Disk" pct={disk} color="#8B5CF6" />
           </View>
-          {ram >= 60 && (
-            <View style={{ backgroundColor: "#3B82F610", borderRadius: 12, padding: 12, marginTop: 10, flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-              <Feather name="info" size={14} color="#60A5FA" style={{ marginTop: 1 }} />
-              <Text style={{ flex: 1, fontSize: 12, color: "#60A5FA", fontFamily: "Inter_400Regular", lineHeight: 18 }}>
-                RAM at {ram}% is real server usage — {workers.length} background workers ({workers.map(w => w.name.split(" ")[0]).slice(0, 3).join(", ")}…) are running normally.
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* Recent deploys */}
@@ -256,37 +271,17 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Workers */}
-        <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
-          <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 12 }}>Background Workers</Text>
-          <View style={{ backgroundColor: colors.card, borderRadius: 18, overflow: "hidden" }}>
-            {workers.length === 0 ? (
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", paddingVertical: 24 }}>No workers running</Text>
-            ) : (
-              workers.map((w, i) => (
-                <View key={w.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: i < workers.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: w.status === "error" ? "#FF453A" : "#30D158", marginRight: 12 }} />
-                  <Text style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{w.name}</Text>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{w.runs ?? 0}×</Text>
-                </View>
-              ))
-            )}
-          </View>
-        </View>
-
         {/* Deployed apps */}
-        <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Deployed Apps</Text>
-            <Pressable onPress={() => router.push("/(tabs)/apps")} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
-              <Text style={{ fontSize: 14, color: colors.primary, fontFamily: "Inter_500Medium" }}>See all</Text>
-            </Pressable>
-          </View>
-          <View style={{ backgroundColor: colors.card, borderRadius: 18, overflow: "hidden" }}>
-            {projects.length === 0 ? (
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", paddingVertical: 24 }}>No apps deployed yet</Text>
-            ) : (
-              projects.map((p, i) => (
+        {projects.length > 0 && (
+          <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Live Apps</Text>
+              <Pressable onPress={() => router.push("/(tabs)/builder")} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
+                <Text style={{ fontSize: 14, color: colors.primary, fontFamily: "Inter_500Medium" }}>See all</Text>
+              </Pressable>
+            </View>
+            <View style={{ backgroundColor: colors.card, borderRadius: 18, overflow: "hidden" }}>
+              {projects.map((p, i) => (
                 <View key={p.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: i < projects.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
                   <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: STATUS_COLOR[p.status] ?? "#6B7DB3", marginRight: 12 }} />
                   <View style={{ flex: 1 }}>
@@ -295,10 +290,26 @@ export default function DashboardScreen() {
                   </View>
                   <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: STATUS_COLOR[p.status] ?? colors.mutedForeground }}>{p.status}</Text>
                 </View>
-              ))
-            )}
+              ))}
+            </View>
           </View>
-        </View>
+        )}
+
+        {/* Workers */}
+        {workers.length > 0 && (
+          <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
+            <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 12 }}>Background Workers</Text>
+            <View style={{ backgroundColor: colors.card, borderRadius: 18, overflow: "hidden" }}>
+              {workers.map((w, i) => (
+                <View key={w.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: i < workers.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: w.status === "error" ? "#FF453A" : "#30D158", marginRight: 12 }} />
+                  <Text style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{w.name}</Text>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{w.runs ?? 0}×</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         <View style={{ height: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 90 }} />
       </ScrollView>

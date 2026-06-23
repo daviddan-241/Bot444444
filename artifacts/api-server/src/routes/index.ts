@@ -14,6 +14,7 @@ import deployEngineRouter from "./deploy-engine";
 import deployRouter from "./deploy";
 import appDeployRouter from "./app-deploy";
 import processesRouter from "./processes";
+import githubRouter from "./github";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(deployRouter);
 router.use(appDeployRouter);
 router.use(processesRouter);
 router.use(shellRouter);
+router.use(githubRouter);
 
 export default router;

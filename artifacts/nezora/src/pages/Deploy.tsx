@@ -1,29 +1,19 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Shell } from '@/components/Shell';
 import {
-  Rocket, Upload, GitBranch, Package, CheckCircle2, XCircle,
-  Loader2, ExternalLink, RefreshCw, Zap, Terminal, Bot, Globe,
-  Server, ChevronDown, ChevronRight, Plus, Trash2
+  Rocket, Upload, GitBranch, CheckCircle2, XCircle,
+  Loader2, ExternalLink, Zap, Terminal, Plus, Trash2,
+  ChevronDown, ChevronRight, Link
 } from 'lucide-react';
 
 const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
 
-type DeployMode = 'static' | 'app';
 type InputMode = 'zip' | 'git';
 
-const FRAMEWORKS = [
-  { icon: '⚡', label: 'React / Vite', type: 'static' },
-  { icon: '▲', label: 'Next.js', type: 'both' },
-  { icon: '🟩', label: 'Node.js / Express', type: 'app' },
-  { icon: '🐍', label: 'Python / Flask / FastAPI', type: 'app' },
-  { icon: '🤖', label: 'Discord Bot (discord.js)', type: 'app' },
-  { icon: '📱', label: 'Telegram Bot (Telegraf)', type: 'app' },
-  { icon: '🐦', label: 'Twitter / X Bot', type: 'app' },
-  { icon: '🌐', label: 'Static HTML', type: 'static' },
-  { icon: '💎', label: 'Ruby / Sinatra', type: 'app' },
-  { icon: '🐹', label: 'Go', type: 'app' },
-  { icon: '🐘', label: 'PHP', type: 'app' },
-  { icon: '🦕', label: 'Bun / Deno', type: 'app' },
+const SUPPORTED = [
+  '⚡ React / Vite', '▲ Next.js', '🟩 Node.js / Express', '🐍 Python / Flask / FastAPI',
+  '🤖 Discord Bot', '📱 Telegram Bot', '🐦 Twitter Bot', '🌐 Static HTML',
+  '💎 Ruby / Sinatra', '🐹 Go', '🐘 PHP', '🦕 Bun / Deno',
 ];
 
 interface EnvVar { key: string; value: string }
@@ -31,8 +21,9 @@ interface EnvVar { key: string; value: string }
 function LogLine({ line }: { line: string }) {
   const isErr = /\[ERR\]|error|failed|Error/i.test(line) && !/✅/.test(line);
   const isOk = /✅|ok|success|done|live/i.test(line) && !/ERR/.test(line);
-  const isInfo = /📦|🔨|📡|📂|🔍|🚀/.test(line);
-  const color = isErr ? '#FF3B30' : isOk ? '#34C759' : isInfo ? '#007AFF' : '#e5e5e5';
+  const isInfo = /📦|🔨|📡|📂|🔍|🚀|📁/.test(line);
+  const isWarn = /⚠️/.test(line);
+  const color = isErr ? '#FF3B30' : isWarn ? '#FF9500' : isOk ? '#34C759' : isInfo ? '#007AFF' : '#e5e5e5';
   return <div style={{ color, fontFamily: 'monospace', fontSize: 12, padding: '1px 0', wordBreak: 'break-all' }}>{line}</div>;
 }
 
@@ -40,9 +31,7 @@ function EnvEditor({ vars, onChange }: { vars: EnvVar[]; onChange: (v: EnvVar[])
   const add = () => onChange([...vars, { key: '', value: '' }]);
   const remove = (i: number) => onChange(vars.filter((_, idx) => idx !== i));
   const update = (i: number, field: 'key' | 'value', val: string) => {
-    const next = [...vars];
-    next[i] = { ...next[i], [field]: val };
-    onChange(next);
+    const next = [...vars]; next[i] = { ...next[i], [field]: val }; onChange(next);
   };
   return (
     <div style={{ marginTop: 12 }}>
@@ -58,7 +47,7 @@ function EnvEditor({ vars, onChange }: { vars: EnvVar[]; onChange: (v: EnvVar[])
         </div>
       ))}
       {vars.length === 0 && (
-        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>No env vars set. Click Add to set PORT, API_KEY, BOT_TOKEN, etc.</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>No env vars. Add PORT, API_KEY, BOT_TOKEN, etc.</div>
       )}
     </div>
   );
@@ -66,9 +55,9 @@ function EnvEditor({ vars, onChange }: { vars: EnvVar[]; onChange: (v: EnvVar[])
 
 export default function Deploy() {
   const base = BASE();
-  const [mode, setMode] = useState<DeployMode>('app');
   const [input, setInput] = useState<InputMode>('zip');
   const [name, setName] = useState('');
+  const [customSlug, setCustomSlug] = useState('');
   const [gitUrl, setGitUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('main');
   const [file, setFile] = useState<File | null>(null);
@@ -83,10 +72,7 @@ export default function Deploy() {
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const addLog = (line: string) => setLogs(prev => [...prev.slice(-500), line]);
-
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-
   useEffect(() => () => stopPoll(), []);
 
   const pollJob = useCallback((id: string) => {
@@ -100,12 +86,10 @@ export default function Deploy() {
         setLogs(job.logs ?? []);
         setTimeout(() => logRef.current?.scrollTo(0, logRef.current.scrollHeight), 50);
         if (job.status === 'done') {
-          stopPoll();
-          setDeploying(false);
+          stopPoll(); setDeploying(false);
           setResult({ ok: true, ...job.result, jobId: id });
         } else if (job.status === 'failed') {
-          stopPoll();
-          setDeploying(false);
+          stopPoll(); setDeploying(false);
           setResult({ ok: false, error: job.error ?? 'Deploy failed', jobId: id });
         }
       } catch {}
@@ -114,25 +98,26 @@ export default function Deploy() {
 
   const envObj = () => Object.fromEntries(envVars.filter(v => v.key).map(v => [v.key, v.value]));
 
-  const deployApp = async () => {
+  const deploy = async () => {
     setDeploying(true); setResult(null); setLogs([]);
     try {
       let r: Response;
       if (input === 'zip') {
-        if (!file) { addLog('[ERR] No file selected'); setDeploying(false); return; }
-        addLog(`📂 Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)…`);
+        if (!file) { setLogs(['[ERR] No file selected']); setDeploying(false); return; }
+        setLogs([`📂 Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)…`]);
         const fd = new FormData();
         fd.append('file', file);
         fd.append('name', name || file.name.replace(/\.zip$/i, ''));
+        fd.append('slug', customSlug);
         fd.append('env', JSON.stringify(envObj()));
         r = await fetch(`${base}/api/real/app-deploy/zip`, { method: 'POST', body: fd, credentials: 'include' });
       } else {
-        if (!gitUrl) { addLog('[ERR] No Git URL'); setDeploying(false); return; }
-        addLog(`📡 Queuing deploy of ${gitUrl}…`);
+        if (!gitUrl) { setLogs(['[ERR] No Git URL']); setDeploying(false); return; }
+        setLogs([`📡 Queuing deploy of ${gitUrl}…`]);
         r = await fetch(`${base}/api/real/app-deploy/git`, {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: gitUrl, branch: gitBranch || 'main', name: name || undefined, env: envObj() }),
+          body: JSON.stringify({ url: gitUrl, branch: gitBranch || 'main', name: name || undefined, slug: customSlug || undefined, env: envObj() }),
         });
       }
       const data = await r.json();
@@ -143,39 +128,8 @@ export default function Deploy() {
         return;
       }
       setJobId(data.jobId);
-      addLog(`✅ Queued! Job ID: ${data.jobId} — tracking live…`);
+      setLogs(prev => [...prev, `✅ Queued — Job: ${data.jobId.slice(-10)}`]);
       pollJob(data.jobId);
-    } catch (e: any) {
-      setLogs([`[ERR] Network error: ${e.message}`]);
-      setResult({ ok: false, error: e.message });
-      setDeploying(false);
-    }
-  };
-
-  const deployStatic = async () => {
-    setDeploying(true); setResult(null); setLogs(['📂 Starting static deploy…']);
-    try {
-      let r: Response;
-      if (input === 'zip') {
-        if (!file) { addLog('[ERR] No file'); setDeploying(false); return; }
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('projectName', name || file.name.replace(/\.zip$/i, ''));
-        fd.append('target', 'instant');
-        r = await fetch(`${base}/api/real/zip`, { method: 'POST', body: fd, credentials: 'include' });
-      } else {
-        if (!gitUrl) { addLog('[ERR] No URL'); setDeploying(false); return; }
-        r = await fetch(`${base}/api/real/git-instant`, {
-          method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: gitUrl, branch: gitBranch || 'main', name: name || undefined }),
-        });
-      }
-      const data = await r.json();
-      setLogs(data.commands?.map((c: any) => `[${c.code === 0 ? 'OK' : 'ERR'}] ${c.command}`) ?? [data.message ?? '']);
-      setResult(data);
-      setDeploying(false);
-      setTimeout(() => logRef.current?.scrollTo(0, logRef.current.scrollHeight), 100);
     } catch (e: any) {
       setLogs([`[ERR] Network error: ${e.message}`]);
       setResult({ ok: false, error: e.message });
@@ -194,64 +148,51 @@ export default function Deploy() {
   return (
     <Shell title="Deploy Center">
       <div className="animate-rise" style={{ maxWidth: 720, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <div>
-            <div className="section-title">Deploy Center</div>
-            <div className="section-subtitle">Host bots, backends, frontends, APIs, websites — anything</div>
-          </div>
+        <div style={{ marginBottom: 20 }}>
+          <div className="section-title">Deploy Center</div>
+          <div className="section-subtitle">Drop a ZIP or paste a Git URL — auto-detects everything and deploys it live</div>
         </div>
 
-        {/* Supported badges */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 }}>
-          {FRAMEWORKS.map(f => (
-            <span key={f.label} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              {f.icon} {f.label}
-            </span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 20 }}>
+          {SUPPORTED.map(f => (
+            <span key={f} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{f}</span>
           ))}
         </div>
 
-        {/* Mode selector */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-          <button
-            onClick={() => setMode('app')}
-            style={{ flex: 1, padding: '12px 16px', borderRadius: 12, border: `2px solid ${mode === 'app' ? '#FF3C00' : 'var(--border)'}`, background: mode === 'app' ? '#FF3C0010' : 'var(--surface)', cursor: 'pointer', textAlign: 'left' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <Server size={15} color={mode === 'app' ? '#FF3C00' : 'var(--text-tertiary)'} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: mode === 'app' ? '#FF3C00' : 'var(--text-primary)' }}>Live App</span>
-              <span style={{ fontSize: 11, background: '#FF3C00', color: '#fff', borderRadius: 4, padding: '0 5px' }}>RECOMMENDED</span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Node.js, Python, bots, APIs — runs as a persistent server. Auto-restarts on crash.</div>
-          </button>
-          <button
-            onClick={() => setMode('static')}
-            style={{ flex: 1, padding: '12px 16px', borderRadius: 12, border: `2px solid ${mode === 'static' ? '#007AFF' : 'var(--border)'}`, background: mode === 'static' ? '#007AFF10' : 'var(--surface)', cursor: 'pointer', textAlign: 'left' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <Globe size={15} color={mode === 'static' ? '#007AFF' : 'var(--text-tertiary)'} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: mode === 'static' ? '#007AFF' : 'var(--text-primary)' }}>Static Site</span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>React, HTML, Vue, Astro — builds once, served as static files.</div>
-          </button>
-        </div>
-
-        {/* Input mode tabs */}
+        {/* Input tabs */}
         <div style={{ display: 'flex', gap: 4, background: 'var(--bg)', borderRadius: 10, padding: 4, marginBottom: 16 }}>
           {(['zip', 'git'] as InputMode[]).map(t => (
             <button key={t} onClick={() => setInput(t)}
-              style={{ flex: 1, padding: '7px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: input === t ? 600 : 500, background: input === t ? '#fff' : 'transparent', color: input === t ? 'var(--text-primary)' : 'var(--text-tertiary)', boxShadow: input === t ? '0 1px 3px rgba(0,0,0,.1)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              {t === 'zip' ? <><Upload size={13} /> ZIP Upload</> : <><GitBranch size={13} /> Git / GitHub</>}
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: input === t ? 600 : 500, background: input === t ? '#fff' : 'transparent', color: input === t ? 'var(--text-primary)' : 'var(--text-tertiary)', boxShadow: input === t ? '0 1px 3px rgba(0,0,0,.1)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              {t === 'zip' ? <><Upload size={13} /> Upload ZIP</> : <><GitBranch size={13} /> Git / GitHub</>}
             </button>
           ))}
         </div>
 
         <div className="card card-inner" style={{ marginBottom: 16 }}>
           {/* App name */}
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
-              App Name <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
+              App Name <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional — auto-detected)</span>
             </label>
             <input className="field" placeholder="my-discord-bot" value={name} onChange={e => setName(e.target.value)} />
+          </div>
+
+          {/* Custom URL slug */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Link size={12} /> Custom URL <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg)', borderRadius: 9, border: '1.5px solid var(--border)', overflow: 'hidden' }}>
+              <span style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', borderRight: '1px solid var(--border)' }}>/api/s/</span>
+              <input
+                className="field"
+                placeholder="my-site (auto if blank)"
+                value={customSlug}
+                onChange={e => setCustomSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                style={{ border: 'none', background: 'transparent', flex: 1, borderRadius: 0, paddingLeft: 8 }}
+              />
+            </div>
           </div>
 
           {/* ZIP drop zone */}
@@ -268,36 +209,39 @@ export default function Deploy() {
               {file ? (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{file.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{(file.size / 1024 / 1024).toFixed(1)} MB · Click to change</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{(file.size / 1024 / 1024).toFixed(2)} MB · Click to change</div>
                 </>
               ) : (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Drop your ZIP here</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>or click to browse · Max 200MB · Include all files (node_modules optional)</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>or click to browse · Max 200MB · Works with any language</div>
                 </>
               )}
             </div>
           )}
-          <input ref={fileRef} type="file" accept=".zip" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); if (!name) setName(f.name.replace(/\.zip$/i, '')); } }} />
+          <input ref={fileRef} type="file" accept=".zip" style={{ display: 'none' }} onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) { setFile(f); if (!name) setName(f.name.replace(/\.zip$/i, '')); }
+          }} />
 
-          {/* Git URL inputs */}
+          {/* Git inputs */}
           {input === 'git' && (
             <>
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Repository URL</label>
-                <input className="field" placeholder="https://github.com/user/my-bot.git" value={gitUrl} onChange={e => setGitUrl(e.target.value)} />
+                <input className="field" placeholder="https://github.com/user/my-repo.git" value={gitUrl} onChange={e => setGitUrl(e.target.value)} />
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Branch</label>
                 <input className="field" placeholder="main" value={gitBranch} onChange={e => setGitBranch(e.target.value)} />
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                💡 Public repos work immediately. For private repos add a token: <code style={{ fontFamily: 'monospace' }}>https://TOKEN@github.com/user/repo</code>
+                💡 Public repos work as-is. Private repos: prepend your token → <code style={{ fontFamily: 'monospace' }}>https://TOKEN@github.com/user/repo</code>
               </div>
             </>
           )}
 
-          {/* Env vars toggle */}
+          {/* Env vars */}
           <button className="btn btn-secondary btn-sm" style={{ marginBottom: showEnv ? 0 : 14 }} onClick={() => setShowEnv(v => !v)}>
             {showEnv ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Environment Variables {envVars.length > 0 ? `(${envVars.length})` : ''}
           </button>
@@ -306,15 +250,13 @@ export default function Deploy() {
           {/* Deploy button */}
           <button
             className="btn btn-primary"
-            style={{ width: '100%', marginTop: 14, background: mode === 'app' ? '#FF3C00' : undefined }}
-            onClick={mode === 'app' ? deployApp : deployStatic}
+            style={{ width: '100%', marginTop: 14, background: '#FF3C00' }}
+            onClick={deploy}
             disabled={deploying || (input === 'zip' ? !file : !gitUrl)}
           >
             {deploying
-              ? <><Loader2 size={15} className="spin" /> {mode === 'app' ? 'Deploying live app…' : 'Building static site…'}</>
-              : mode === 'app'
-                ? <><Rocket size={15} /> Deploy Live App</>
-                : <><Globe size={15} /> Deploy Static Site</>}
+              ? <><Loader2 size={15} className="spin" /> Deploying — auto-detecting…</>
+              : <><Rocket size={15} /> Deploy</>}
           </button>
         </div>
 
@@ -325,11 +267,11 @@ export default function Deploy() {
               <Terminal size={13} color={deploying ? '#007AFF' : '#34C759'} />
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Deploy Log</span>
               {deploying && <Loader2 size={13} className="spin" color="#007AFF" style={{ marginLeft: 'auto' }} />}
-              {jobId && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto', fontFamily: 'monospace' }}>job: {jobId.slice(-12)}</span>}
+              {jobId && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: deploying ? 0 : 'auto', fontFamily: 'monospace' }}>job: {jobId.slice(-12)}</span>}
             </div>
             <div ref={logRef} style={{ background: '#0A0A0F', borderRadius: '0 0 12px 12px', padding: '10px 14px', maxHeight: 360, overflowY: 'auto' }}>
               {logs.map((l, i) => <LogLine key={i} line={l} />)}
-              {deploying && logs.length === 0 && <LogLine line="⠦ Waiting for worker slot…" />}
+              {deploying && logs.length === 0 && <LogLine line="⠦ Waiting for worker…" />}
             </div>
           </div>
         )}
@@ -353,7 +295,7 @@ export default function Deploy() {
             )}
             {result.ok && result.type === 'live-app' && (
               <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>🤖 Live process running — auto-restarts on crash</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>🟢 Live process running — auto-restarts on crash</div>
                 <a href="/processes" style={{ fontSize: 12, color: '#007AFF' }}>View in Live Apps →</a>
               </div>
             )}
@@ -361,21 +303,20 @@ export default function Deploy() {
           </div>
         )}
 
-        {/* Keep-alive section */}
+        {/* Keep-alive */}
         <div className="card card-inner" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Zap size={15} color="#FF9500" />
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Keep Your Server Alive 24/7</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10 }}>
-            The built-in keep-alive worker pings the server every 4 minutes automatically. For guaranteed 24/7 uptime, add this URL to a free uptime monitor like <a href="https://uptimerobot.com" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>UptimeRobot</a> or <a href="https://cron-job.org" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>cron-job.org</a>:
+            Add this URL to <a href="https://uptimerobot.com" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>UptimeRobot</a> or <a href="https://cron-job.org" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>cron-job.org</a> for guaranteed uptime:
           </div>
           <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <code style={{ fontSize: 12, flex: 1, wordBreak: 'break-all', color: 'var(--text-primary)' }}>{pingUrl}</code>
             <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard?.writeText(pingUrl)}>Copy</button>
           </div>
         </div>
-
       </div>
     </Shell>
   );

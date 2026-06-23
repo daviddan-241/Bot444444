@@ -69,12 +69,18 @@ class WorkerPool {
   getMetrics(last = 60) { return this.metrics.slice(-last); }
 
   async init() {
-    // ── Keep-Alive Pinger: prevents Replit from sleeping ──────────────────────
+    // ── Keep-Alive Pinger: prevents host from sleeping (Render, Replit, Railway)
     this.register("keep-alive", "Keep-Alive Pinger", "system", 4 * 60 * 1000, async () => {
-      const domain = process.env.REPLIT_DOMAINS;
-      if (!domain) return;
-      const url = `https://${domain}/api/ping`;
-      const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      // Resolve the public base URL in priority order
+      const base =
+        process.env.ALLOWED_ORIGIN ??                                    // manually set on Render
+        process.env.RENDER_EXTERNAL_URL ??                               // set automatically by Render
+        (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS}` : null) ??
+        process.env.RAILWAY_STATIC_URL ??
+        null;
+      if (!base) return; // local dev — no need to self-ping
+      const url = `${base.replace(/\/$/, "")}/api/ping`;
+      const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
       if (!r.ok) throw new Error(`Ping failed: ${r.status}`);
     });
 

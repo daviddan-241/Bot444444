@@ -1,41 +1,44 @@
-# Render Blueprint — deploy Nezora with one click
-# https://render.com/docs/blueprint-spec
-#
-# Click "New Blueprint" in Render dashboard and point to this repo.
-# Or: render blueprint launch
+# Nezora Cloud OS — Render deployment blueprint
+# Connect this repo in your Render dashboard → New Web Service
+# Render auto-sets PORT and RENDER_EXTERNAL_URL — no extra config needed
+# UptimeRobot: monitor https://<your-render-url>/api/ping every 5 minutes
 
 services:
   - type: web
     name: nezora
-    runtime: docker
-    # Uses the root Dockerfile which builds web + API into one container
-    dockerfilePath: ./Dockerfile
+    runtime: node
+    region: oregon
     plan: free
-    # Render sets PORT automatically; our app reads process.env.PORT
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
     healthCheckPath: /api/ping
     envVars:
       - key: NODE_ENV
         value: production
 
-      # ── Auth — Render generates a secure random value ─────────────────────
-      - key: NEZORA_ADMIN_TOKEN
-        generateValue: true
-      - key: NEZORA_ADMIN_PASSWORD
-        generateValue: true
-      - key: NEZORA_ADMIN_USERNAME
-        value: admin
+      # Render sets this automatically — used by the keep-alive pinger
+      # RENDER_EXTERNAL_URL is injected automatically, no action needed
 
-      # ── Free AI fallback (optional but recommended) ───────────────────────
-      # Sign up free at https://console.groq.com → API Keys
+      # Persistent storage path — apps survive server restarts
+      - key: NEZORA_APPS_DIR
+        value: /opt/render/project/src/.nezora-apps
+
+      # Optional: set a login password for the UI
+      # Leave blank for open/public mode (anyone on your URL can access)
+      - key: ADMIN_TOKEN
+        sync: false
+
+      # Free AI providers — set at least one for full AI agent features
+      # OpenRouter: https://openrouter.ai (free, no credit card)
+      - key: OPENROUTER_API_KEY
+        sync: false
+      # Groq: https://console.groq.com (free, ultra-fast Llama 3.3)
       - key: GROQ_API_KEY
-        sync: false   # you paste this in Render dashboard — never committed
+        sync: false
+      # Together.ai: https://api.together.xyz (free tier)
+      - key: TOGETHER_API_KEY
+        sync: false
 
-      # ── Ollama (optional — only if you run Ollama separately) ─────────────
-      # - key: OLLAMA_HOST
-      #   value: https://your-ollama-server.example.com
-      # - key: OLLAMA_MODEL
-      #   value: llama3.2
-
-      # ── Auto-detected from Render env — no config needed ──────────────────
-      # RENDER_EXTERNAL_URL is set by Render → our keep-alive pinger reads it
-      # PUBLIC_URL is also auto-detected from request headers
+      # GitHub token — allows deploying private repos
+      - key: GITHUB_PERSONAL_ACCESS_TOKEN
+        sync: false

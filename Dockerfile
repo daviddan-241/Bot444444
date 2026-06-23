@@ -8,7 +8,7 @@ FROM node:20 AS web-builder
 RUN npm install -g pnpm@10.26.1 --silent
 
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY lib/ ./lib/
 COPY artifacts/nezora/package.json ./artifacts/nezora/
 
@@ -26,7 +26,7 @@ FROM node:20 AS api-builder
 RUN npm install -g pnpm@10.26.1 --silent
 
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY lib/ ./lib/
 COPY artifacts/api-server/package.json ./artifacts/api-server/
 

@@ -1,0 +1,100 @@
+2026-06-23T00:08:05.57790258Z 
+2026-06-23T00:08:05.577905571Z #20 [web-builder 8/9] COPY artifacts/nezora/ ./artifacts/nezora/
+2026-06-23T00:08:06.000408037Z #20 ...
+2026-06-23T00:08:06.000425837Z 
+2026-06-23T00:08:06.000431947Z #21 [api-builder 8/9] COPY artifacts/api-server/ ./artifacts/api-server/
+2026-06-23T00:08:06.000436887Z #21 DONE 0.6s
+2026-06-23T00:08:06.159763658Z 
+2026-06-23T00:08:06.159826949Z #20 [web-builder 8/9] COPY artifacts/nezora/ ./artifacts/nezora/
+2026-06-23T00:08:06.159832909Z #20 DONE 0.6s
+2026-06-23T00:08:06.159837159Z 
+2026-06-23T00:08:06.159841949Z #22 [web-builder 9/9] RUN pnpm --filter @workspace/nezora run build
+2026-06-23T00:08:06.62252844Z #22 0.480 
+2026-06-23T00:08:06.6225586Z #22 0.480 > @workspace/nezora@0.0.0 build /workspace/artifacts/nezora
+2026-06-23T00:08:06.62256565Z #22 0.480 > vite build --config vite.config.ts
+2026-06-23T00:08:06.622571021Z #22 0.480 
+2026-06-23T00:08:06.796098321Z #22 ...
+2026-06-23T00:08:06.796117271Z 
+2026-06-23T00:08:06.796123071Z #23 [api-builder 9/9] RUN pnpm --filter @workspace/api-server run build
+2026-06-23T00:08:06.796127382Z #23 0.482 
+2026-06-23T00:08:06.796131532Z #23 0.482 > @workspace/api-server@0.0.0 build /workspace/artifacts/api-server
+2026-06-23T00:08:06.796136262Z #23 0.482 > node ./build.mjs
+2026-06-23T00:08:06.796140222Z #23 0.482 
+2026-06-23T00:08:06.796144822Z #23 0.550 ▲ [WARNING] Cannot find base config file "../../tsconfig.base.json" [tsconfig.json]
+2026-06-23T00:08:06.796148772Z #23 0.550 
+2026-06-23T00:08:06.796153482Z #23 0.550     tsconfig.json:2:13:
+2026-06-23T00:08:06.796158102Z #23 0.550       2 │   "extends": "../../tsconfig.base.json",
+2026-06-23T00:08:06.796162072Z #23 0.550         ╵              ~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-06-23T00:08:06.796165942Z #23 0.550 
+2026-06-23T00:08:06.796169842Z #23 0.620 ▲ [WARNING] Cannot find base config file "../../tsconfig.base.json" [tsconfig.json]
+2026-06-23T00:08:06.796173712Z #23 0.620 
+2026-06-23T00:08:06.796177603Z #23 0.620     ../../lib/api-zod/tsconfig.json:2:13:
+2026-06-23T00:08:06.796181452Z #23 0.620       2 │   "extends": "../../tsconfig.base.json",
+2026-06-23T00:08:06.796185443Z #23 0.620         ╵              ~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-06-23T00:08:06.796189483Z #23 0.620 
+2026-06-23T00:08:06.796201383Z #23 0.709 2 warnings
+2026-06-23T00:08:06.796205463Z #23 0.709 
+2026-06-23T00:08:06.796211773Z #23 0.709   dist/index.mjs                       1.7mb ⚠️
+2026-06-23T00:08:06.796215793Z #23 0.709   dist/pino-worker.mjs               153.4kb
+2026-06-23T00:08:06.796219723Z #23 0.709   dist/pino-file.mjs                 142.0kb
+2026-06-23T00:08:06.796223603Z #23 0.709   dist/pino-pretty.mjs               114.6kb
+2026-06-23T00:08:06.796227633Z #23 0.709   dist/thread-stream-worker.mjs        7.3kb
+2026-06-23T00:08:06.796231644Z #23 0.709   dist/index.mjs.map                   2.7mb
+2026-06-23T00:08:06.796235994Z #23 0.709   dist/pino-worker.mjs.map           256.9kb
+2026-06-23T00:08:06.796239974Z #23 0.709   dist/pino-file.mjs.map             229.0kb
+2026-06-23T00:08:06.796243924Z #23 0.709   dist/pino-pretty.mjs.map           204.0kb
+2026-06-23T00:08:06.796248924Z #23 0.709   dist/thread-stream-worker.mjs.map   12.0kb
+2026-06-23T00:08:06.796252904Z #23 0.709 
+2026-06-23T00:08:06.796256814Z #23 0.709 ⚡ Done in 161ms
+2026-06-23T00:08:06.796260864Z #23 DONE 0.8s
+2026-06-23T00:08:06.796264674Z 
+2026-06-23T00:08:06.796280185Z #22 [web-builder 9/9] RUN pnpm --filter @workspace/nezora run build
+2026-06-23T00:08:06.796282965Z #22 0.693 ▲ [WARNING] Cannot find base config file "../../tsconfig.base.json" [tsconfig.json]
+2026-06-23T00:08:06.796285494Z #22 0.693 
+2026-06-23T00:08:06.796288045Z #22 0.693     tsconfig.json:2:13:
+2026-06-23T00:08:06.796290565Z #22 0.693       2 │   "extends": "../../tsconfig.base.json",
+2026-06-23T00:08:06.796293055Z #22 0.693         ╵              ~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-06-23T00:08:06.796295645Z #22 0.693 
+2026-06-23T00:08:06.901568407Z #22 0.892 vite v7.3.3 building client environment for production...
+2026-06-23T00:08:07.028264917Z #22 0.954 ✓ 0 modules transformed.
+2026-06-23T00:08:07.028285137Z #22 0.958 ✗ Build failed in 32ms
+2026-06-23T00:08:07.028290967Z #22 0.958 error during build:
+2026-06-23T00:08:07.028295758Z #22 0.958 [vite:build-html] failed to resolve "extends":"../../tsconfig.base.json" in /workspace/artifacts/nezora/tsconfig.json
+2026-06-23T00:08:07.028300658Z #22 0.958 file: /workspace/artifacts/nezora/index.html
+2026-06-23T00:08:07.028305308Z #22 0.958     at resolveExtends (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:5809:8)
+2026-06-23T00:08:07.028309298Z #22 0.958     at parseExtends (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:5775:71)
+2026-06-23T00:08:07.028338518Z #22 0.958     at parse$13 (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:5677:23)
+2026-06-23T00:08:07.028346548Z #22 0.958     at async loadTsconfigJsonForFile (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:6302:37)
+2026-06-23T00:08:07.028350519Z #22 0.958     at async transformWithEsbuild (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:6086:55)
+2026-06-23T00:08:07.028354619Z #22 0.958     at async Object.transform (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:6172:20)
+2026-06-23T00:08:07.028359149Z #22 0.958     at async transform (file:///workspace/node_modules/.pnpm/rollup@4.60.3/node_modules/rollup/dist/es/shared/node-entry.js:21677:16)
+2026-06-23T00:08:07.028363909Z #22 0.958     at async ModuleLoader.addModuleSource (file:///workspace/node_modules/.pnpm/rollup@4.60.3/node_modules/rollup/dist/es/shared/node-entry.js:21905:36)
+2026-06-23T00:08:07.028367949Z #22 0.981 /workspace/artifacts/nezora:
+2026-06-23T00:08:07.028380899Z #22 0.981  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/nezora@0.0.0 build: `vite build --config vite.config.ts`
+2026-06-23T00:08:07.028394349Z #22 0.981 Exit status 1
+2026-06-23T00:08:07.028399189Z #22 ERROR: process "/bin/sh -c pnpm --filter @workspace/nezora run build" did not complete successfully: exit code: 1
+2026-06-23T00:08:07.353442222Z ------
+2026-06-23T00:08:07.353460472Z  > importing cache manifest
+2026-06-23T00:08:07.353467072Z ------
+2026-06-23T00:08:07.353472843Z ------
+2026-06-23T00:08:07.353478393Z  > [web-builder 9/9] RUN pnpm --filter @workspace/nezora run build:
+2026-06-23T00:08:07.353484303Z 0.958     at parseExtends (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:5775:71)
+2026-06-23T00:08:07.353506243Z 0.958     at parse$13 (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:5677:23)
+2026-06-23T00:08:07.353509293Z 0.958     at async loadTsconfigJsonForFile (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:6302:37)
+2026-06-23T00:08:07.353511403Z 0.958     at async transformWithEsbuild (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:6086:55)
+2026-06-23T00:08:07.353513463Z 0.958     at async Object.transform (file:///workspace/node_modules/.pnpm/vite@7.3.3_@types+node@25.6.2_jiti@2.7.0_lightningcss@1.32.0_terser@5.48.0_tsx@4.21.0_yaml@2.8.4/node_modules/vite/dist/node/chunks/config.js:6172:20)
+2026-06-23T00:08:07.353516113Z 0.958     at async transform (file:///workspace/node_modules/.pnpm/rollup@4.60.3/node_modules/rollup/dist/es/shared/node-entry.js:21677:16)
+2026-06-23T00:08:07.353518664Z 0.958     at async ModuleLoader.addModuleSource (file:///workspace/node_modules/.pnpm/rollup@4.60.3/node_modules/rollup/dist/es/shared/node-entry.js:21905:36)
+2026-06-23T00:08:07.353521284Z 0.981 /workspace/artifacts/nezora:
+2026-06-23T00:08:07.353524894Z 0.981  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/nezora@0.0.0 build: `vite build --config vite.config.ts`
+2026-06-23T00:08:07.353528924Z 0.981 Exit status 1
+2026-06-23T00:08:07.353532044Z ------
+2026-06-23T00:08:07.354218417Z Dockerfile:21
+2026-06-23T00:08:07.354226297Z --------------------
+2026-06-23T00:08:07.354229987Z   19 |     # Build Vite app at base path "/" (served by Express in production)
+2026-06-23T00:08:07.354233227Z   20 |     ENV NODE_ENV=production BASE_PATH=/ PORT=3000
+2026-06-23T00:08:07.354235707Z   21 | >>> RUN pnpm --filter @workspace/nezora run build
+2026-06-23T00:08:07.354238207Z   22 |     # Output: artifacts/nezora/dist/public/
+2026-06-23T00:08:07.354240727Z   23 |     
+2026-06-23T00:08:07.354243257Z --------------------
+2026-06-23T00:08:07.354246367Z error: failed to solve: process "/bin/sh -c pnpm --filter @workspace/nezora run build" did not complete successfully: exit code: 1

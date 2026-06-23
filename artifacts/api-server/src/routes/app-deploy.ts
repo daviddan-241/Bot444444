@@ -8,6 +8,7 @@ import AdmZip from "adm-zip";
 import path from "path";
 import { mkdtemp, rm, readdir, stat, cp, readFile, mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
+import { loadSitesCatalog, saveSitesCatalog } from "./sites";
 
 const router: IRouter = Router();
 
@@ -238,6 +239,10 @@ async function deployApp(opts: {
       else log(`⚠️  index.html missing at root — found ${htmlFile} instead.`);
     }
     const siteUrl = `${origin}/api/s/${slug}/`;
+    // Record in sites catalog so My Hosted Sites page can list it
+    const sitesCat = await loadSitesCatalog();
+    sitesCat[slug] = { ...(sitesCat[slug] ?? {}), slug, name, url: siteUrl, framework, type: "static", createdAt: sitesCat[slug]?.createdAt ?? Date.now(), updatedAt: Date.now() } as any;
+    await saveSitesCatalog(sitesCat).catch(() => {});
     log(`✅ Static site live at ${siteUrl}`);
     return { type: "static-site", slug, url: siteUrl, framework };
   }

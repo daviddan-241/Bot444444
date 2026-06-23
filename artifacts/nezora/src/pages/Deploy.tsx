@@ -3,17 +3,34 @@ import { Shell } from '@/components/Shell';
 import {
   Rocket, Upload, GitBranch, CheckCircle2, XCircle,
   Loader2, ExternalLink, Zap, Terminal, Plus, Trash2,
-  ChevronDown, ChevronRight, Link
+  ChevronDown, ChevronRight, Link, Info
 } from 'lucide-react';
 
 const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
+const DEPLOY_STORAGE_KEY = 'nezora_deploy_form';
 
 type InputMode = 'zip' | 'git';
 
-const SUPPORTED = [
-  '⚡ React / Vite', '▲ Next.js', '🟩 Node.js / Express', '🐍 Python / Flask / FastAPI',
-  '🤖 Discord Bot', '📱 Telegram Bot', '🐦 Twitter Bot', '🌐 Static HTML',
-  '💎 Ruby / Sinatra', '🐹 Go', '🐘 PHP', '🦕 Bun / Deno',
+interface FrameworkBadge {
+  label: string;
+  type: 'live' | 'static';
+  color: string;
+  hint: string;
+}
+
+const SUPPORTED: FrameworkBadge[] = [
+  { label: '⚡ React / Vite',         type: 'static', color: '#61DAFB', hint: 'Builds to static files — served via CDN' },
+  { label: '▲ Next.js',              type: 'live',   color: '#fff',    hint: 'Live Node.js process — SSR + API routes' },
+  { label: '🟩 Node.js / Express',   type: 'live',   color: '#34C759', hint: 'Live Node.js server process' },
+  { label: '🐍 Python / Flask / FastAPI', type: 'live', color: '#3776AB', hint: 'Live Python process — auto-detects framework' },
+  { label: '🤖 Discord Bot',         type: 'live',   color: '#5865F2', hint: 'Live Node.js bot process — never served as static' },
+  { label: '📱 Telegram Bot',        type: 'live',   color: '#26A5E4', hint: 'Live Node.js or Python bot process' },
+  { label: '🐦 Twitter Bot',         type: 'live',   color: '#1DA1F2', hint: 'Live Node.js bot — auto-detected from twitter-api-v2' },
+  { label: '🌐 Static HTML',         type: 'static', color: '#FF9500', hint: 'Plain HTML/CSS/JS — hosted as a static site' },
+  { label: '💎 Ruby / Sinatra',      type: 'live',   color: '#CC342D', hint: 'Live Ruby/Rails process' },
+  { label: '🐹 Go',                  type: 'live',   color: '#00ADD8', hint: 'Compiled Go binary — live process' },
+  { label: '🐘 PHP',                 type: 'live',   color: '#8892BF', hint: 'Live PHP built-in server' },
+  { label: '🦕 Bun / Deno',         type: 'live',   color: '#f472b6', hint: 'Live Bun/Deno runtime process' },
 ];
 
 interface EnvVar { key: string; value: string }
@@ -55,11 +72,16 @@ function EnvEditor({ vars, onChange }: { vars: EnvVar[]; onChange: (v: EnvVar[])
 
 export default function Deploy() {
   const base = BASE();
-  const [input, setInput] = useState<InputMode>('zip');
-  const [name, setName] = useState('');
-  const [customSlug, setCustomSlug] = useState('');
-  const [gitUrl, setGitUrl] = useState('');
-  const [gitBranch, setGitBranch] = useState('main');
+
+  // Persisted form state
+  const [input, setInput] = useState<InputMode>(() => {
+    try { return (localStorage.getItem(`${DEPLOY_STORAGE_KEY}_mode`) as InputMode) || 'zip'; } catch { return 'zip'; }
+  });
+  const [name, setName] = useState(() => { try { return localStorage.getItem(`${DEPLOY_STORAGE_KEY}_name`) || ''; } catch { return ''; } });
+  const [customSlug, setCustomSlug] = useState(() => { try { return localStorage.getItem(`${DEPLOY_STORAGE_KEY}_slug`) || ''; } catch { return ''; } });
+  const [gitUrl, setGitUrl] = useState(() => { try { return localStorage.getItem(`${DEPLOY_STORAGE_KEY}_gitUrl`) || ''; } catch { return ''; } });
+  const [gitBranch, setGitBranch] = useState(() => { try { return localStorage.getItem(`${DEPLOY_STORAGE_KEY}_branch`) || 'main'; } catch { return 'main'; } });
+
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
@@ -68,9 +90,18 @@ export default function Deploy() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [result, setResult] = useState<any>(null);
+  const [hoveredBadge, setHoveredBadge] = useState<number | null>(null);
+
   const logRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Persist form fields to localStorage on change
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_mode`, input); } catch {} }, [input]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_name`, name); } catch {} }, [name]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_slug`, customSlug); } catch {} }, [customSlug]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_gitUrl`, gitUrl); } catch {} }, [gitUrl]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_branch`, gitBranch); } catch {} }, [gitBranch]);
 
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   useEffect(() => () => stopPoll(), []);
@@ -148,15 +179,55 @@ export default function Deploy() {
   return (
     <Shell title="Deploy Center">
       <div className="animate-rise" style={{ maxWidth: 720, margin: '0 auto' }}>
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 16 }}>
           <div className="section-title">Deploy Center</div>
           <div className="section-subtitle">Drop a ZIP or paste a Git URL — auto-detects everything and deploys it live</div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 20 }}>
-          {SUPPORTED.map(f => (
-            <span key={f} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{f}</span>
-          ))}
+        {/* Framework badges — clickable with type info */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Info size={11} /> Hover a badge to see how it deploys
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {SUPPORTED.map((f, i) => (
+              <div key={f.label} style={{ position: 'relative' }}>
+                <span
+                  onMouseEnter={() => setHoveredBadge(i)}
+                  onMouseLeave={() => setHoveredBadge(null)}
+                  style={{
+                    fontSize: 11, padding: '4px 9px', borderRadius: 20, cursor: 'default',
+                    background: f.type === 'live' ? 'rgba(52,199,89,0.1)' : 'rgba(0,122,255,0.1)',
+                    border: `1px solid ${f.type === 'live' ? 'rgba(52,199,89,0.3)' : 'rgba(0,122,255,0.3)'}`,
+                    color: f.type === 'live' ? '#34C759' : '#007AFF',
+                    display: 'inline-flex', alignItems: 'center', gap: 4, userSelect: 'none',
+                    transition: 'all .15s',
+                  }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 3, background: f.type === 'live' ? '#34C759' : '#007AFF', flexShrink: 0 }} />
+                  {f.label}
+                </span>
+                {hoveredBadge === i && (
+                  <div style={{
+                    position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)',
+                    background: '#1a1a2e', color: '#fff', fontSize: 11, padding: '6px 10px',
+                    borderRadius: 8, whiteSpace: 'nowrap', zIndex: 100, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    pointerEvents: 'none',
+                  }}>
+                    <span style={{ color: f.type === 'live' ? '#34C759' : '#007AFF', fontWeight: 700 }}>
+                      {f.type === 'live' ? '🟢 Live Process' : '🔵 Static Site'}
+                    </span>
+                    <br />
+                    {f.hint}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-tertiary)' }}>
+            <span><span style={{ color: '#34C759' }}>●</span> Green = Live process (has a running server)</span>
+            <span><span style={{ color: '#007AFF' }}>●</span> Blue = Static site (file serving)</span>
+          </div>
         </div>
 
         {/* Input tabs */}
@@ -180,8 +251,10 @@ export default function Deploy() {
 
           {/* Custom URL slug */}
           <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Link size={12} /> Custom URL <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Link size={12} /> Custom URL <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
+              </span>
             </label>
             <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg)', borderRadius: 9, border: '1.5px solid var(--border)', overflow: 'hidden' }}>
               <span style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', borderRight: '1px solid var(--border)' }}>/api/s/</span>
@@ -255,7 +328,7 @@ export default function Deploy() {
             disabled={deploying || (input === 'zip' ? !file : !gitUrl)}
           >
             {deploying
-              ? <><Loader2 size={15} className="spin" /> Deploying — auto-detecting…</>
+              ? <><Loader2 size={15} className="spin" /> Deploying — auto-detecting stack…</>
               : <><Rocket size={15} /> Deploy</>}
           </button>
         </div>
@@ -299,7 +372,20 @@ export default function Deploy() {
                 <a href="/processes" style={{ fontSize: 12, color: '#007AFF' }}>View in Live Apps →</a>
               </div>
             )}
-            {!result.ok && <div style={{ fontSize: 13, color: '#FF3B30', marginTop: 4 }}>{result.error}</div>}
+            {result.ok && result.type === 'static-site' && (
+              <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>🔵 Static site hosted — instant global delivery</div>
+                <a href="/sites" style={{ fontSize: 12, color: '#007AFF' }}>View in My Hosted Sites →</a>
+              </div>
+            )}
+            {!result.ok && (
+              <div>
+                <div style={{ fontSize: 13, color: '#FF3B30', marginTop: 4 }}>{result.error}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>
+                  💡 Tip: Ask the <a href="/ai" style={{ color: '#5856D6' }}>AI Assistant</a> to diagnose this error automatically
+                </div>
+              </div>
+            )}
           </div>
         )}
 

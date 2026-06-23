@@ -1,17 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Shell } from '@/components/Shell';
-import { Bot, Send, Loader2, User, Trash2, Sparkles, AlertCircle, Zap, Paperclip, X, GitBranch, FolderOpen } from 'lucide-react';
+import {
+  Bot, Send, Loader2, User, Trash2, Sparkles, AlertCircle, Zap,
+  Paperclip, X, GitBranch, FolderOpen, ChevronDown, ChevronRight,
+  Wrench, FlaskConical, Map
+} from 'lucide-react';
 
 const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
+const STORAGE_KEY = 'nezora_ai_messages';
 
-interface Msg { role: 'user' | 'assistant'; content: string; ts: number; streaming?: boolean; }
+interface Msg {
+  role: 'user' | 'assistant';
+  content: string;
+  ts: number;
+  streaming?: boolean;
+}
 
 const SUGGESTIONS = [
   'Generate a Dockerfile for a Node.js Express API',
   'Write a docker-compose.yml for a full-stack app',
   'How do I deploy a Python FastAPI app?',
-  'Why is my app crashing on startup?',
-  'Fix my npm install error with node-gyp',
+  'Why is my Discord bot crashing on startup?',
+  'Fix my npm install error with peer deps',
   'Set up nginx reverse proxy with SSL',
 ];
 
@@ -26,26 +36,151 @@ function modelLabel(model: string): string {
   return model;
 }
 
+// Parse assistant message into Plan / Build / Verify sections
+interface ParsedMsg {
+  plan: string;
+  build: string;
+  verify: string;
+  raw: string;
+  hasStructure: boolean;
+}
+
+function parseStructured(content: string): ParsedMsg {
+  const planMatch = content.match(/🧭\s*PLAN\s*([\s\S]*?)(?=⚙️\s*BUILD|🧪\s*VERIFY|$)/i);
+  const buildMatch = content.match(/⚙️\s*BUILD\s*([\s\S]*?)(?=🧪\s*VERIFY|$)/i);
+  const verifyMatch = content.match(/🧪\s*VERIFY\s*([\s\S]*?)$/i);
+
+  const plan = planMatch ? planMatch[1].trim() : '';
+  const build = buildMatch ? buildMatch[1].trim() : '';
+  const verify = verifyMatch ? verifyMatch[1].trim() : '';
+  const hasStructure = !!(plan || build || verify);
+
+  return { plan, build, verify, raw: content, hasStructure };
+}
+
+function CollapsibleSection({
+  icon: Icon, label, color, content, defaultOpen = false
+}: {
+  icon: any; label: string; color: string; content: string; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderRadius: 10, border: `1px solid ${color}30`, overflow: 'hidden', marginBottom: 6 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px', background: `${color}12`, border: 'none',
+          cursor: 'pointer', textAlign: 'left'
+        }}
+      >
+        <Icon size={14} color={color} />
+        <span style={{ fontSize: 12, fontWeight: 700, color, flex: 1, letterSpacing: '.04em', textTransform: 'uppercase' }}>{label}</span>
+        {open ? <ChevronDown size={13} color={color} /> : <ChevronRight size={13} color={color} />}
+      </button>
+      {open && (
+        <div style={{
+          padding: '10px 12px', fontSize: 13, lineHeight: 1.7,
+          color: 'var(--text-secondary)', whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word', background: 'var(--bg)',
+          borderTop: `1px solid ${color}20`
+        }}>
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MsgBubble({ m }: { m: Msg }) {
   const isUser = m.role === 'user';
-  return (
-    <div style={{ display: 'flex', gap: 10, flexDirection: isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
-      <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isUser ? '#FF3C00' : 'linear-gradient(135deg, #5856D6, #007AFF)', marginTop: 2 }}>
-        {isUser ? <User size={15} color="#fff" /> : <Bot size={15} color="#fff" />}
+
+  if (isUser) {
+    return (
+      <div style={{ display: 'flex', gap: 10, flexDirection: 'row-reverse', alignItems: 'flex-start' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FF3C00', marginTop: 2 }}>
+          <User size={15} color="#fff" />
+        </div>
+        <div style={{ maxWidth: '82%', padding: '10px 14px', borderRadius: '14px 14px 4px 14px', background: '#FF3C00', color: '#fff', fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {m.content}
+        </div>
       </div>
-      <div style={{ maxWidth: '82%', padding: '10px 14px', borderRadius: isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isUser ? '#FF3C00' : 'var(--surface)', color: isUser ? '#fff' : 'var(--text-primary)', fontSize: 14, lineHeight: 1.65, border: !isUser ? '1px solid var(--border)' : 'none', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: isUser ? 'inherit' : 'inherit' }}>
-        {m.content || (m.streaming
-          ? <span style={{ display: 'inline-flex', gap: 4, paddingTop: 4 }}>
-              {[0, .2, .4].map(d => <span key={d} style={{ width: 7, height: 7, borderRadius: 4, background: '#5856D6', animation: `pulse 1s infinite ${d}s` }} />)}
-            </span>
-          : '')}
+    );
+  }
+
+  // Streaming state
+  if (m.streaming && !m.content) {
+    return (
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #5856D6, #007AFF)', marginTop: 2 }}>
+          <Bot size={15} color="#fff" />
+        </div>
+        <div style={{ padding: '12px 16px', background: 'var(--surface)', borderRadius: '14px 14px 14px 4px', border: '1px solid var(--border)', display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+          {[0, .2, .4].map(d => (
+            <span key={d} style={{ width: 7, height: 7, borderRadius: 4, background: '#5856D6', animation: `pulse 1s infinite ${d}s`, display: 'inline-block' }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const parsed = parseStructured(m.content);
+
+  return (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #5856D6, #007AFF)', marginTop: 2 }}>
+        <Bot size={15} color="#fff" />
+      </div>
+      <div style={{ maxWidth: '86%', flex: 1 }}>
+        {parsed.hasStructure ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {parsed.plan && (
+              <CollapsibleSection
+                icon={Map} label="Plan" color="#FF9500"
+                content={parsed.plan} defaultOpen={false}
+              />
+            )}
+            {parsed.build && (
+              <CollapsibleSection
+                icon={Wrench} label="Build" color="#007AFF"
+                content={parsed.build} defaultOpen={true}
+              />
+            )}
+            {parsed.verify && (
+              <CollapsibleSection
+                icon={FlaskConical} label="Verify" color="#34C759"
+                content={parsed.verify} defaultOpen={false}
+              />
+            )}
+            {/* Fallback if only raw text after all sections */}
+            {!parsed.plan && !parsed.build && !parsed.verify && (
+              <div style={{ padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-primary)' }}>
+                {m.content}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-primary)' }}>
+            {m.content || (m.streaming
+              ? <span style={{ display: 'inline-flex', gap: 4, paddingTop: 4 }}>
+                  {[0, .2, .4].map(d => <span key={d} style={{ width: 7, height: 7, borderRadius: 4, background: '#5856D6', animation: `pulse 1s infinite ${d}s`, display: 'inline-block' }} />)}
+                </span>
+              : '')}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export default function AI() {
-  const [messages, setMessages] = useState<Msg[]>([]);
+  // Load persisted messages from localStorage
+  const [messages, setMessages] = useState<Msg[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -59,6 +194,15 @@ export default function AI() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const base = BASE();
+
+  // Persist messages to localStorage whenever they change
+  useEffect(() => {
+    try {
+      // Only keep last 60 messages to avoid storage limits
+      const toSave = messages.slice(-60).map(m => ({ ...m, streaming: false }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    } catch {}
+  }, [messages]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -81,7 +225,7 @@ export default function AI() {
     e.target.value = '';
   }, []);
 
-  const streamSSE = useCallback(async (url: string, body: object, userText: string) => {
+  const streamSSE = useCallback(async (url: string, body: object) => {
     setLoading(true);
     setError('');
 
@@ -142,7 +286,7 @@ export default function AI() {
     setMessages(prev => [...prev, { role: 'user', content: rawMsg, ts: Date.now() }]);
 
     try {
-      await streamSSE(`${base}/api/ai/chat/stream`, { message: msg, history }, rawMsg);
+      await streamSSE(`${base}/api/ai/chat/stream`, { message: msg, history });
     } catch (e: any) {
       setError(e.message || 'AI unavailable');
       setLoading(false);
@@ -157,16 +301,19 @@ export default function AI() {
     setRepoQuestion('');
     try {
       await streamSSE(`${base}/api/ai/analyze-repo`, {
-        url: repoUrl,
-        branch: 'main',
-        token: repoToken || undefined,
-        question: q,
-      }, q);
+        url: repoUrl, branch: 'main', token: repoToken || undefined, question: q,
+      });
     } catch (e: any) {
       setError(e.message || 'Repo analysis failed');
       setLoading(false);
     }
   }, [repoUrl, repoToken, repoQuestion, loading, base, streamSSE]);
+
+  const clearChat = () => {
+    setMessages([]);
+    setError('');
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  };
 
   const label = modelLabel(model);
 
@@ -181,10 +328,11 @@ export default function AI() {
             <div className="section-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Zap size={12} color="#34C759" />
               {label}
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>· Responses show Plan / Build / Verify tabs</span>
             </div>
           </div>
           {messages.length > 0 && (
-            <button className="btn btn-secondary btn-sm" onClick={() => { setMessages([]); setError(''); }}><Trash2 size={13} /> Clear</button>
+            <button className="btn btn-secondary btn-sm" onClick={clearChat}><Trash2 size={13} /> Clear</button>
           )}
         </div>
 
@@ -199,6 +347,9 @@ export default function AI() {
                 <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>Ask anything about your deployments</div>
                 <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
                   Free AI — OpenRouter · Groq · Together.ai · Ollama · HuggingFace
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+                  Responses include collapsible <span style={{ color: '#FF9500', fontWeight: 600 }}>Plan</span> · <span style={{ color: '#007AFF', fontWeight: 600 }}>Build</span> · <span style={{ color: '#34C759', fontWeight: 600 }}>Verify</span> sections
                 </div>
               </div>
 
@@ -216,7 +367,8 @@ export default function AI() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
                 {SUGGESTIONS.map(s => (
-                  <button key={s} onClick={() => send(s)} className="card card-inner" style={{ textAlign: 'left', cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, padding: '10px 12px', transition: 'all .15s', border: '1px solid var(--border)' }}
+                  <button key={s} onClick={() => send(s)} className="card card-inner"
+                    style={{ textAlign: 'left', cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, padding: '10px 12px', transition: 'all .15s', border: '1px solid var(--border)' }}
                     onMouseEnter={e => (e.currentTarget.style.borderColor = '#FF3C00')}
                     onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
                     {s}

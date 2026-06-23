@@ -77,21 +77,48 @@ function NavItem({ href, label, icon: Icon, pathname }: { href: string; label: s
 function CloudLogo({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="64" height="64" rx="16" fill="url(#cloudGrad)" />
       <defs>
         <linearGradient id="cloudGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0F2460" />
+          <stop offset="50%" stopColor="#1E5FD4" />
+          <stop offset="100%" stopColor="#4A9BFF" />
+        </linearGradient>
+        <linearGradient id="cloudShine" x1="0" y1="0" x2="0" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.15)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="16" fill="url(#cloudGrad)" />
+      <rect width="64" height="64" rx="16" fill="url(#cloudShine)" />
+      {/* Cloud shape */}
+      <path
+        d="M46 37a8 8 0 00-7-7.93A11 11 0 0017 34a8 8 0 000 16h29a8 8 0 000-13z"
+        fill="white"
+        opacity="0.96"
+      />
+      {/* Upload arrow */}
+      <path d="M32 30v-10M28.5 23l3.5-3.5 3.5 3.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
+      {/* Shine dot */}
+      <circle cx="50" cy="14" r="4" fill="rgba(255,255,255,0.25)" />
+    </svg>
+  );
+}
+
+// User avatar — real styled avatar instead of plain "D"
+function UserAvatar({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="avatarGrad" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#1E5FD4" />
           <stop offset="100%" stopColor="#4A9BFF" />
         </linearGradient>
       </defs>
-      {/* Cloud shape */}
-      <path
-        d="M44 36a7 7 0 00-6.1-6.96A10 10 0 0018 33a7 7 0 000 14h26a7 7 0 000-11z"
-        fill="white"
-        opacity="0.95"
-      />
-      {/* Upload arrow */}
-      <path d="M32 26v-8M29 21l3-3 3 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+      <rect width="56" height="56" rx="14" fill="url(#avatarGrad)" />
+      {/* Head */}
+      <circle cx="28" cy="22" r="9" fill="rgba(255,255,255,0.9)" />
+      {/* Body */}
+      <path d="M10 50c0-9.94 8.06-18 18-18s18 8.06 18 18" fill="rgba(255,255,255,0.85)" />
     </svg>
   );
 }
@@ -126,9 +153,7 @@ export function Shell({ children, title, action }: { children: ReactNode; title?
 
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
           <Link href="/admin" className={`nav-item ${pathname === '/admin' ? 'active' : ''}`} style={{ margin: 0 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 9, background: 'linear-gradient(135deg,#1E5FD4,#4A9BFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>D</span>
-            </div>
+            <UserAvatar size={28} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Danny</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Admin</div>

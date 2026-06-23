@@ -79,18 +79,30 @@ async function readOptional(file: string) {
 
 function detectFramework(files: string[], pkg?: any): string {
   const dep = (n: string) => Boolean(pkg?.dependencies?.[n] || pkg?.devDependencies?.[n]);
+  // Bots first — before static/html checks so they don't get misclassified
+  if (dep("discord.js") || dep("discordjs") || dep("@discordjs/rest") || dep("discord-api-types")) return "node-server";
+  if (dep("telegraf") || dep("node-telegram-bot-api") || dep("grammy") || dep("telebot")) return "node-server";
+  if (dep("twitter-api-v2") || dep("twit") || dep("twitter")) return "node-server";
   if (dep("next")) return "nextjs";
   if (dep("vite") && dep("react")) return "react-vite";
   if (dep("vite") && dep("vue")) return "vue";
   if (dep("astro")) return "astro";
   if (dep("fastify") || dep("hapi") || dep("koa")) return "node-server";
   if (dep("express")) return "node-express";
+  // Check for bot patterns in file names regardless of package
+  const filenames = files.map(f => path.basename(f).toLowerCase());
+  if (filenames.some(f => ["bot.js", "bot.ts", "discord.js", "telegram.js"].includes(f))) return "node-server";
   if (files.some(f => /^(server|index|app)\.(js|ts|mjs|cjs)$/.test(f))) return "node-server";
   if (files.some(f => /requirements\.txt$/.test(f)) || files.some(f => /^(main|app|server)\.py$/.test(f))) return "python";
   if (files.some(f => /^Gemfile$/.test(f))) return "ruby";
   if (files.some(f => /^go\.mod$/.test(f))) return "go";
-  if (files.some(f => /^(index|main)\.html$/.test(f))) return "static";
-  if (files.some(f => /\.(html|htm)$/.test(f))) return "static";
+  // Only detect static if there's no package.json (no server possibility)
+  if (!pkg) {
+    if (files.some(f => /^(index|main)\.html$/.test(f))) return "static";
+    if (files.some(f => /\.(html|htm)$/.test(f))) return "static";
+  }
+  // Has a package.json but no framework detected — treat as generic node server
+  if (pkg) return "node-server";
   return "unknown";
 }
 
@@ -170,9 +182,13 @@ async function deployApp(opts: {
     const [cmd, ...args] = cmds.install.split(" ");
     let r = await run(cmd, args, sourceDir);
     if (r.code !== 0) {
-      log(`⚠️  ${cmd} failed, trying npm install…`);
-      r = await run("npm", ["install"], sourceDir);
-      if (r.code !== 0) throw new Error(`Install failed: ${r.stderr.slice(0, 500)}`);
+      log(`⚠️  ${cmd} failed, trying npm install --legacy-peer-deps…`);
+      r = await run("npm", ["install", "--legacy-peer-deps"], sourceDir);
+      if (r.code !== 0) {
+        log(`⚠️  legacy-peer-deps failed, trying npm install --force…`);
+        r = await run("npm", ["install", "--force"], sourceDir);
+        if (r.code !== 0) throw new Error(`Install failed: ${r.stderr.slice(0, 500)}`);
+      }
     }
     log("✅ Dependencies installed.");
   }

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useLocation } from 'wouter';
 import { Shell } from '@/components/Shell';
-import { Bot, Send, Loader2, User, Trash2, Sparkles, AlertCircle, Zap } from 'lucide-react';
+import { Bot, Send, Loader2, User, Trash2, Sparkles, AlertCircle, Zap, Paperclip, X } from 'lucide-react';
 
 const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -21,8 +22,11 @@ export default function AI() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [model, setModel] = useState<string>('');
+  const [attachedFile, setAttachedFile] = useState<{ name: string; content: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [, setLocation] = useLocation();
   const base = BASE();
 
   // Auto-scroll on new content
@@ -41,13 +45,32 @@ export default function AI() {
     model === 'huggingface' ? 'HuggingFace · Free' :
     model === 'built-in' ? 'Built-in fallback' : 'Detecting model…';
 
+  const handleFileAttach = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 500 * 1024) { setError('File too large — max 500 KB'); return; }
+    try {
+      const content = await file.text();
+      setAttachedFile({ name: file.name, content });
+    } catch { setError('Could not read file'); }
+    e.target.value = '';
+  }, []);
+
   const send = useCallback(async (text?: string) => {
-    const msg = (text ?? input).trim();
-    if (!msg || loading) return;
+    const rawMsg = (text ?? input).trim();
+    if (!rawMsg || loading) return;
+
+    let msg = rawMsg;
+    if (attachedFile) {
+      const ext = attachedFile.name.split('.').pop() ?? '';
+      msg = `[File: ${attachedFile.name}]\n\`\`\`${ext}\n${attachedFile.content.slice(0, 8000)}\n\`\`\`\n\n${rawMsg}`;
+      setAttachedFile(null);
+    }
+
     setInput('');
     setError('');
     const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
-    setMessages(prev => [...prev, { role: 'user', content: msg, ts: Date.now() }]);
+    setMessages(prev => [...prev, { role: 'user', content: rawMsg, ts: Date.now() }]);
     setLoading(true);
 
     try {
@@ -57,6 +80,12 @@ export default function AI() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg, history }),
       });
+
+      if (r.status === 401) {
+        setLoading(false);
+        setLocation('/login');
+        return;
+      }
 
       if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
 
@@ -90,8 +119,12 @@ export default function AI() {
           } catch {}
         }
       }
-    } catch {
-      setError('AI unavailable — make sure the API server is running and Ollama is reachable');
+    } catch (e: any) {
+      if (e?.message?.includes('401')) {
+        setLocation('/login');
+      } else {
+        setError('AI unavailable — set GROQ_API_KEY in your Render environment variables, then redeploy');
+      }
     }
 
     setLoading(false);
@@ -174,10 +207,23 @@ export default function AI() {
 
         {/* Input */}
         <div className="card card-inner" style={{ flexShrink: 0 }}>
+          {attachedFile && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', marginBottom: 8, background: '#007AFF15', borderRadius: 8, border: '1px solid #007AFF40' }}>
+              <Paperclip size={13} color="#007AFF" />
+              <span style={{ fontSize: 12, color: '#007AFF', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedFile.name}</span>
+              <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' }}>
+                <X size={13} color="#007AFF" />
+              </button>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <textarea ref={inputRef} className="field" style={{ flex: 1, minHeight: 44, maxHeight: 120, resize: 'vertical', padding: '10px 14px' }} placeholder="Ask about Dockerfiles, deployments, errors…" value={input} onChange={e => setInput(e.target.value)}
+            <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept=".txt,.md,.js,.ts,.tsx,.jsx,.py,.json,.yaml,.yml,.toml,.dockerfile,Dockerfile,.sh,.env,.gitignore,.html,.css" onChange={handleFileAttach} />
+            <button onClick={() => fileInputRef.current?.click()} title="Attach file" style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12, border: '1px solid var(--border)', background: attachedFile ? '#007AFF15' : 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <Paperclip size={16} color={attachedFile ? '#007AFF' : 'var(--text-tertiary)'} />
+            </button>
+            <textarea ref={inputRef} className="field" style={{ flex: 1, minHeight: 44, maxHeight: 120, resize: 'vertical', padding: '10px 14px' }} placeholder="Ask about Dockerfiles, deployments, errors… or attach a file" value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-            <button className="btn btn-primary btn-icon" onClick={() => send()} disabled={!input.trim() || loading} style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12 }}>
+            <button className="btn btn-primary btn-icon" onClick={() => send()} disabled={(!input.trim() && !attachedFile) || loading} style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12 }}>
               {loading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
             </button>
           </div>

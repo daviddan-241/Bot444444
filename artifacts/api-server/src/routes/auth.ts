@@ -39,5 +39,10 @@ router.post("/auth/logout", (_req, res) => {
   res.json({ ok: true });
 });
 
+router.get("/auth/check", (req, res) => {
+  if (!assertAdmin(req, res)) return;
+  res.json({ ok: true });
+});
+
 export { AUTH_COOKIE };
 export default router;

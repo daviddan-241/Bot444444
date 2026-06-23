@@ -1,4 +1,5 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -27,11 +28,39 @@ import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
-function Router() {
+function AuthRouter() {
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [location, setLocation] = useLocation();
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+  useEffect(() => {
+    fetch(`${base}/api/auth/check`, { credentials: "include" })
+      .then(r => {
+        if (r.ok) {
+          setAuthed(true);
+        } else {
+          setAuthed(false);
+          if (location !== "/login") setLocation("/login");
+        }
+      })
+      .catch(() => {
+        setAuthed(false);
+        if (location !== "/login") setLocation("/login");
+      });
+  }, []);
+
+  if (authed === null) {
+    return (
+      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+        <div style={{ width: 28, height: 28, border: "3px solid var(--border)", borderTopColor: "#007AFF", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+      </div>
+    );
+  }
+
   return (
     <Switch>
-      <Route path="/" component={Home} />
       <Route path="/login" component={Login} />
+      <Route path="/" component={Home} />
       <Route path="/deploy" component={Deploy} />
       <Route path="/real" component={Deploy} />
       <Route path="/deployments" component={Deployments} />
@@ -61,7 +90,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <AuthRouter />
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

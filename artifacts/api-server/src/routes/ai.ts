@@ -135,12 +135,12 @@ router.post("/ai/chat", async (req, res) => {
   let reply = "";
   let model = "built-in";
   try {
-    reply = await callOllama(messages);
-    model = `ollama:${OLLAMA_MODEL}`;
+    reply = await callGroq(messages);
+    model = GROQ_MODEL;
   } catch {
     try {
-      reply = await callGroq(messages);
-      model = GROQ_MODEL;
+      reply = await callOllama(messages);
+      model = `ollama:${OLLAMA_MODEL}`;
     } catch {
       try {
         reply = await callHuggingFace(messages);
@@ -170,15 +170,15 @@ router.post("/ai/chat/stream", async (req, res) => {
   const messages = buildMessages(message, history);
 
   try {
-    // Try Ollama streaming first
-    await streamOllama(messages, (token) => send({ token }));
-    send({ done: true, model: `ollama:${OLLAMA_MODEL}` });
+    // Try Groq first (fastest, free tier, works on Render)
+    const reply = await callGroq(messages);
+    send({ token: reply });
+    send({ done: true, model: GROQ_MODEL });
   } catch {
-    // Fall back to Groq (non-streaming, then emit as one chunk)
     try {
-      const reply = await callGroq(messages);
-      send({ token: reply });
-      send({ done: true, model: GROQ_MODEL });
+      // Try Ollama streaming (local or self-hosted)
+      await streamOllama(messages, (token) => send({ token }));
+      send({ done: true, model: `ollama:${OLLAMA_MODEL}` });
     } catch {
       try {
         const reply = await callHuggingFace(messages);

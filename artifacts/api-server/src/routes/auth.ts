@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { timingSafeEqual } from "crypto";
+import { assertAdmin } from "../lib/auth-guard";
 
 const AUTH_COOKIE = "nezora_admin";
 

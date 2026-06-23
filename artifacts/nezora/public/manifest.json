@@ -1,23 +1,30 @@
 {
   "name": "Nezora Deploy",
   "short_name": "Nezora",
-  "description": "Personal cloud OS — deploy apps, bots, and APIs",
+  "description": "Personal cloud OS — deploy apps, bots, APIs, and websites",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0A0F1E",
-  "theme_color": "#007AFF",
+  "theme_color": "#FF3C00",
   "orientation": "portrait-primary",
   "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/opengraph.jpg",
-      "sizes": "1200x630",
-      "type": "image/jpeg"
+      "purpose": "any"
     }
   ],
   "categories": ["productivity", "developer", "utilities"]

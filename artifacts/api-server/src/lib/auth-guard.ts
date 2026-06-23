@@ -12,12 +12,9 @@ function safeEqual(a: string, b: string): boolean {
 
 export function assertAdmin(req: Request, res: Response): boolean {
   const configured = process.env.ADMIN_TOKEN;
-  if (!configured) {
-    // In dev, skip auth if no token is configured
-    if (process.env.NODE_ENV !== "production") return true;
-    res.status(500).json({ ok: false, message: "ADMIN_TOKEN is required in production." });
-    return false;
-  }
+  // If no ADMIN_TOKEN configured → open mode (personal self-hosted tool)
+  if (!configured) return true;
+
   const header = req.headers["x-nezora-admin-token"] || "";
   const cookieHeader = req.headers["cookie"] || "";
   const cookieToken = cookieHeader.toString().match(new RegExp(`${AUTH_COOKIE}=([^;]+)`))?.[1];

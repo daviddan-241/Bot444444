@@ -161,7 +161,20 @@ router.post("/real/zip", async (req: any, res) => {
       res.status(400).json({ ok: false, message: "Missing ZIP file." });
       return;
     }
-    const fileBuffer: Buffer = file.data;
+    // When useTempFiles:true, file.data is empty — read from disk instead
+    let fileBuffer: Buffer;
+    if (file.data && file.data.length > 0) {
+      fileBuffer = file.data;
+    } else if (file.tempFilePath) {
+      fileBuffer = await readFile(file.tempFilePath);
+    } else {
+      res.status(400).json({ ok: false, message: "Could not read uploaded file." });
+      return;
+    }
+    if (fileBuffer.length === 0) {
+      res.status(400).json({ ok: false, message: "Uploaded file is empty (0 bytes). Please re-export the ZIP and try again." });
+      return;
+    }
     if (fileBuffer.length > 75 * 1024 * 1024) {
       res.status(413).json({ ok: false, message: "ZIP too large. Keep under 75MB." });
       return;

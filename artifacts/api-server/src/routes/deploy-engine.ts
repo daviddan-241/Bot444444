@@ -48,15 +48,15 @@ async function run(cmd: string, args: string[], cwd: string, env?: Record<string
   });
 }
 
-async function deployFromDir(
+export async function deployFromDir(
   dir: string,
   req: Request,
   name: string,
   source: string,
-  opts?: { mode?: "process" | "docker"; memLimit?: string; cpuLimit?: string; restartPolicy?: string },
+  opts?: { mode?: "process" | "docker"; memLimit?: string; cpuLimit?: string; restartPolicy?: string; externalLog?: (msg: string) => void },
 ): Promise<{ ok: boolean; url?: string; logs: string[]; stack: any; error?: string }> {
   const logs: string[] = [];
-  const log = (msg: string) => { logs.push(msg); console.log(msg); };
+  const log = (msg: string) => { logs.push(msg); console.log(msg); opts?.externalLog?.(msg); };
 
   log(`[DEPLOY] Detecting stack in ${dir}...`);
   const stack = await detectStack(dir);

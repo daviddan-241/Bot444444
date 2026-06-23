@@ -1,8 +1,9 @@
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -19,59 +20,86 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useDeploy, DeployJob } from "@/contexts/DeployContext";
 import { useColors } from "@/hooks/useColors";
 
-type DeployMode = "git" | "docker";
+type DeployMode = "git" | "zip_static";
 
-function classifyColor(line: string) {
-  if (line.includes("[ERR]") || line.toLowerCase().includes("error") || line.toLowerCase().includes("failed")) return "#FF453A";
-  if (line.includes("✓") || line.toLowerCase().includes("success") || line.includes("[DEPLOY]")) return "#30D158";
-  if (line.includes("[DETECT]") || line.includes("[BUILD]") || line.includes("[INSTALL]")) return "#60A5FA";
+interface ServerJob {
+  id: string;
+  name: string;
+  status: "queued" | "running" | "done" | "failed";
+  createdAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  logs: string[];
+  result?: { url?: string };
+  error?: string;
+}
+
+function logColor(line: string) {
+  if (/\[ERR\]|error|failed|❌/i.test(line)) return "#FF453A";
+  if (/✅|✓|\[OK\]|success|live at|🚀/i.test(line)) return "#30D158";
+  if (/🔧|auto-repair|💡/i.test(line)) return "#FF9F0A";
+  if (/\[DETECT\]|\[BUILD\]|\[INSTALL\]|🔍|📦|Cloning|Detecting/i.test(line)) return "#60A5FA";
   return "#94A3B8";
 }
 
-function JobRow({ job }: { job: DeployJob }) {
+function ServerJobRow({ job, isExpanded, onToggle }: { job: ServerJob; isExpanded: boolean; onToggle: () => void }) {
   const colors = useColors();
-  const elapsed = job.finishedAt
+  const elapsed = job.finishedAt && job.startedAt
     ? `${Math.round((job.finishedAt - job.startedAt) / 1000)}s`
-    : `${Math.round((Date.now() - job.startedAt) / 1000)}s ago`;
+    : job.startedAt
+      ? `${Math.round((Date.now() - job.startedAt) / 1000)}s`
+      : "";
+
+  const isActive = job.status === "running" || job.status === "queued";
+  const statusColor = job.status === "done" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#3B82F6";
 
   return (
-    <View style={{ backgroundColor: colors.card, borderRadius: 14, padding: 14, marginBottom: 10 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-        <View style={{
-          width: 34, height: 34, borderRadius: 10,
-          backgroundColor: job.status === "success" ? "#30D15818" : job.status === "failed" ? "#FF453A18" : "#3B82F618",
-          alignItems: "center", justifyContent: "center",
-        }}>
-          <Feather
-            name={job.status === "success" ? "check-circle" : job.status === "failed" ? "x-circle" : "loader"}
-            size={18}
-            color={job.status === "success" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#3B82F6"}
-          />
+    <Pressable onPress={onToggle} style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}>
+      <View style={{ backgroundColor: colors.card, borderRadius: 14, marginBottom: 10, overflow: "hidden", borderWidth: isActive ? 1.5 : 1, borderColor: isActive ? "#3B82F640" : colors.border }}>
+        <View style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: `${statusColor}18`, alignItems: "center", justifyContent: "center" }}>
+            {isActive
+              ? <ActivityIndicator size="small" color={statusColor} />
+              : <Feather name={job.status === "done" ? "check-circle" : "x-circle"} size={18} color={statusColor} />
+            }
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>{job.name}</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+              {isActive ? "deploying…" : job.status} {elapsed ? `· ${elapsed}` : ""}
+            </Text>
+          </View>
+          <View style={{ alignItems: "flex-end", gap: 4 }}>
+            <Text style={{ fontSize: 11, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: statusColor }}>{job.status}</Text>
+            <Feather name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.mutedForeground} />
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{job.name}</Text>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{job.mode} · {elapsed}</Text>
-        </View>
-        <Text style={{ fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: job.status === "success" ? "#30D158" : job.status === "failed" ? "#FF453A" : "#3B82F6" }}>
-          {job.status}
-        </Text>
+
+        {isExpanded && (
+          <View style={{ borderTopWidth: 1, borderTopColor: colors.border }}>
+            {job.result?.url && (
+              <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: "#0D3321" }}>
+                <Text style={{ fontSize: 12, color: "#30D158", fontFamily: "Inter_500Medium" }}>🚀 {job.result.url}</Text>
+              </View>
+            )}
+            {job.error && (
+              <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: "#2D0A0A" }}>
+                <Text style={{ fontSize: 12, color: "#FF453A", fontFamily: "Inter_500Medium" }}>✗ {job.error}</Text>
+              </View>
+            )}
+            {job.logs && job.logs.length > 0 && (
+              <View style={{ backgroundColor: "#060B14", padding: 12, maxHeight: 180 }}>
+                <ScrollView nestedScrollEnabled>
+                  {job.logs.map((l, i) => (
+                    <Text key={i} style={{ fontSize: 11, color: logColor(l), fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", lineHeight: 18 }}>{l}</Text>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
       </View>
-      {job.status === "failed" && job.error && (
-        <Text style={{ fontSize: 12, color: "#FF453A", fontFamily: "Inter_400Regular", marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
-          {job.error}
-        </Text>
-      )}
-      {job.status === "success" && job.url && (
-        <Text style={{ fontSize: 12, color: "#3B82F6", fontFamily: "Inter_400Regular", marginTop: 8 }} numberOfLines={1}>{job.url}</Text>
-      )}
-      {job.logs && job.logs.length > 0 && (
-        <View style={{ backgroundColor: "#080B12", borderRadius: 8, padding: 10, marginTop: 10, maxHeight: 120 }}>
-          {job.logs.slice(-8).map((l, i) => (
-            <Text key={i} style={{ fontSize: 11, color: classifyColor(l), fontFamily: "Inter_400Regular", lineHeight: 17 }}>{l}</Text>
-          ))}
-        </View>
-      )}
-    </View>
+    </Pressable>
   );
 }
 
@@ -81,81 +109,88 @@ export default function DeployScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
   const { serverUrl, token } = useAuth();
-  const { jobs, addJob, updateJob, clearFinished, activeCount } = useDeploy();
+  const { jobs: localJobs, addJob, updateJob } = useDeploy();
 
   const [mode, setMode] = useState<DeployMode>("git");
   const [name, setName] = useState("");
   const [gitUrl, setGitUrl] = useState("");
   const [branch, setBranch] = useState("main");
-  const [dockerImg, setDockerImg] = useState("");
+  const [deploying, setDeploying] = useState(false);
 
-  const fireAndForget = async () => {
+  const [serverJobs, setServerJobs] = useState<ServerJob[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeJobId = useRef<string | null>(null);
+
+  const fetchServerJobs = useCallback(async () => {
+    if (!serverUrl) return;
+    try {
+      const r = await fetch(`${serverUrl}/api/jobs`, { headers: { "x-nezora-admin-token": token } });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.ok && Array.isArray(d.jobs)) {
+        setServerJobs(d.jobs.slice(0, 30));
+        // Auto-expand the active job
+        const active = d.jobs.find((j: ServerJob) => j.status === "running" || j.status === "queued");
+        if (active && expandedId === null) setExpandedId(active.id);
+      }
+    } catch {}
+  }, [serverUrl, token]);
+
+  useEffect(() => {
+    fetchServerJobs();
+    pollingRef.current = setInterval(fetchServerJobs, 1500);
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  }, [fetchServerJobs]);
+
+  const deploy = async () => {
     const n = name.trim();
     if (!n) { Alert.alert("Missing name", "Enter an app name."); return; }
     if (mode === "git" && !gitUrl.trim()) { Alert.alert("Missing URL", "Enter a Git repository URL."); return; }
-    if (mode === "docker" && !dockerImg.trim()) { Alert.alert("Missing image", "Enter a Docker image name."); return; }
+    if (!serverUrl) { Alert.alert("No server", "Set your server URL in Settings first."); return; }
 
-    const jobId = `job_${Date.now()}`;
-    const job: Omit<DeployJob, "startedAt"> = {
-      id: jobId,
-      name: n,
-      mode,
-      status: "deploying",
-    };
-
-    await addJob(job);
+    setDeploying(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // Clear form so user can start another deploy
-    setName("");
-    setGitUrl("");
-    setBranch("main");
-    setDockerImg("");
+    try {
+      let endpoint = "";
+      let body = "";
 
-    // Fire request — doesn't block the UI at all
-    const doFetch = async () => {
-      try {
-        let endpoint = "";
-        let body = "";
-
-        if (mode === "git") {
-          endpoint = "/api/real/git-instant";
-          body = JSON.stringify({ name: n, url: gitUrl.trim(), branch: branch.trim() || "main" });
-        } else {
-          // Docker: not supported without Docker daemon — inform user
-          await updateJob(jobId, {
-            status: "failed",
-            error: "Docker deploy requires Docker on the server. Use Git deploy for public repos.",
-            finishedAt: Date.now(),
-          });
-          return;
-        }
-
-        const res = await fetch(`${serverUrl}${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-nezora-admin-token": token },
-          body,
-        });
-        const data = await res.json();
-        await updateJob(jobId, {
-          status: data?.ok ? "success" : "failed",
-          url: data?.url,
-          error: data?.ok ? undefined : (data?.message ?? data?.error ?? "Deploy failed"),
-          logs: data?.commands?.map((c: any) => `[${c.code === 0 ? "OK" : "ERR"}] ${c.command}`) ?? data?.logs,
-          finishedAt: Date.now(),
-        });
-      } catch (e: any) {
-        await updateJob(jobId, {
-          status: "failed",
-          error: e.message ?? "Network error",
-          finishedAt: Date.now(),
-        });
+      if (mode === "git") {
+        endpoint = "/api/jobs/git";
+        body = JSON.stringify({ name: n, url: gitUrl.trim(), branch: branch.trim() || "main" });
+      } else {
+        Alert.alert("ZIP Deploy", "ZIP deploy — use the web dashboard to upload a ZIP file.");
+        setDeploying(false);
+        return;
       }
-    };
 
-    // Intentional fire-and-forget: no await
-    doFetch();
+      const res = await fetch(`${serverUrl}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-nezora-admin-token": token },
+        body,
+      });
+      const data = await res.json();
+
+      if (data.ok && data.jobId) {
+        activeJobId.current = data.jobId;
+        setExpandedId(data.jobId);
+        // Refresh immediately to show the new job
+        await fetchServerJobs();
+        // Clear form
+        setName(""); setGitUrl(""); setBranch("main");
+        Alert.alert("Deploy started", `Job ${data.jobId} is running. Watch logs live in the Code tab.`, [{ text: "OK" }]);
+      } else {
+        Alert.alert("Deploy failed", data.error ?? data.message ?? "Unknown error");
+      }
+    } catch (e: any) {
+      Alert.alert("Network error", e.message ?? "Could not reach server");
+    } finally {
+      setDeploying(false);
+    }
   };
+
+  const activeServerCount = serverJobs.filter(j => j.status === "running" || j.status === "queued").length;
 
   const inputStyle = {
     backgroundColor: colors.card, borderRadius: 12,
@@ -163,7 +198,6 @@ export default function DeployScreen() {
     fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" as const,
     borderWidth: 1, borderColor: colors.border,
   };
-
   const labelStyle = {
     fontSize: 12, fontWeight: "600" as const, color: colors.mutedForeground,
     fontFamily: "Inter_600SemiBold" as const, textTransform: "uppercase" as const,
@@ -182,20 +216,23 @@ export default function DeployScreen() {
             <LinearGradient colors={["#FF3C00", "#FF6B35"]} style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" }}>
               <Feather name="upload-cloud" size={20} color="#fff" />
             </LinearGradient>
-            <View>
-              <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Deploy</Text>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Tap deploy, leave — it runs on your server</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Deploy Center</Text>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Real deploys · Live logs · Auto-repair</Text>
             </View>
+            <Pressable onPress={fetchServerJobs} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 8 })}>
+              <Feather name="refresh-cw" size={18} color={colors.mutedForeground} />
+            </Pressable>
           </View>
         </LinearGradient>
 
-        {/* Active jobs pill */}
-        {activeCount > 0 && (
+        {/* Live active banner */}
+        {activeServerCount > 0 && (
           <View style={{ marginHorizontal: 20, marginTop: 16 }}>
-            <LinearGradient colors={["#FF3C00", "#FF6B35"]} style={{ borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" }} />
+            <LinearGradient colors={["#1D4ED8", "#7C3AED"]} style={{ borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <ActivityIndicator size="small" color="#fff" />
               <Text style={{ flex: 1, fontSize: 14, fontWeight: "600", color: "#fff", fontFamily: "Inter_600SemiBold" }}>
-                {activeCount} deploy{activeCount > 1 ? "s" : ""} running on your server
+                {activeServerCount} deploy{activeServerCount > 1 ? "s" : ""} running on server — watch in Code tab
               </Text>
             </LinearGradient>
           </View>
@@ -205,7 +242,7 @@ export default function DeployScreen() {
         <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
           <Text style={labelStyle}>Deploy Type</Text>
           <View style={{ flexDirection: "row", gap: 10 }}>
-            {(["git", "docker"] as DeployMode[]).map(m => (
+            {([["git", "git-branch", "Git Repo"], ["zip_static", "archive", "ZIP File"]] as const).map(([m, icon, label]) => (
               <Pressable
                 key={m}
                 style={({ pressed }) => ({
@@ -216,10 +253,9 @@ export default function DeployScreen() {
                 })}
                 onPress={() => { setMode(m); Haptics.selectionAsync(); }}
               >
-                {/* @ts-ignore */}
-                <Feather name={m === "git" ? "git-branch" : "package"} size={18} color={mode === m ? colors.primary : colors.mutedForeground} />
+                <Feather name={icon} size={18} color={mode === m ? colors.primary : colors.mutedForeground} />
                 <Text style={{ fontSize: 13, fontWeight: "600", color: mode === m ? colors.primary : colors.mutedForeground, fontFamily: "Inter_600SemiBold", marginTop: 4 }}>
-                  {m === "git" ? "Git Repo" : "Docker"}
+                  {label}
                 </Text>
               </Pressable>
             ))}
@@ -240,39 +276,68 @@ export default function DeployScreen() {
             </>
           )}
 
-          {mode === "docker" && (
-            <>
-              <Text style={labelStyle}>Docker Image</Text>
-              <TextInput style={[inputStyle, { marginBottom: 16 }]} value={dockerImg} onChangeText={setDockerImg} placeholder="nginx:latest" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false} />
-            </>
+          {mode === "zip_static" && (
+            <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: colors.border, alignItems: "center", gap: 8 }}>
+              <Feather name="archive" size={28} color={colors.mutedForeground} />
+              <Text style={{ fontSize: 14, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>Upload ZIP via web dashboard</Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+                Open your server URL in a browser, then use the Deploy page to upload a ZIP. Logs will appear here in real time.
+              </Text>
+            </View>
           )}
         </View>
 
         {/* Deploy button */}
-        <View style={{ paddingHorizontal: 20, marginTop: 4 }}>
-          <Pressable onPress={fireAndForget} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-            <LinearGradient colors={["#FF3C00", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }}>
-              <Feather name="zap" size={20} color="#fff" />
-              <Text style={{ fontSize: 17, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>Deploy Now</Text>
-            </LinearGradient>
-          </Pressable>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 10 }}>
-            Runs on your server — safe to close this screen
-          </Text>
-        </View>
-
-        {/* Job history */}
-        {jobs.length > 0 && (
-          <View style={{ paddingHorizontal: 20, marginTop: 28 }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Deploy History</Text>
-              <Pressable onPress={clearFinished} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>Clear done</Text>
-              </Pressable>
-            </View>
-            {[...jobs].reverse().map(j => <JobRow key={j.id} job={j} />)}
+        {mode === "git" && (
+          <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
+            <Pressable onPress={deploy} disabled={deploying} style={({ pressed }) => ({ opacity: pressed || deploying ? 0.8 : 1 })}>
+              <LinearGradient colors={["#FF3C00", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                {deploying ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="zap" size={20} color="#fff" />}
+                <Text style={{ fontSize: 17, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>
+                  {deploying ? "Starting deploy…" : "Deploy Now"}
+                </Text>
+              </LinearGradient>
+            </Pressable>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 10 }}>
+              Returns instantly · watch logs live in Code tab · auto-repair on errors
+            </Text>
           </View>
         )}
+
+        {/* Server deploy history */}
+        <View style={{ paddingHorizontal: 20, marginTop: 28 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Deploy History</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {serverJobs.length > 0 && (
+                <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#1E293B" }}>
+                  <Text style={{ fontSize: 11, color: "#94A3B8", fontFamily: "Inter_500Medium" }}>{serverJobs.length} jobs</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {serverJobs.length === 0 ? (
+            <View style={{ backgroundColor: colors.card, borderRadius: 14, padding: 24, alignItems: "center", gap: 10 }}>
+              <Feather name="inbox" size={28} color={colors.mutedForeground} />
+              <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 13, textAlign: "center" }}>
+                {serverUrl ? "No deploys yet. Start one above!" : "Set server URL in Settings to see deploy history."}
+              </Text>
+            </View>
+          ) : (
+            serverJobs.map(j => (
+              <ServerJobRow
+                key={j.id}
+                job={j}
+                isExpanded={expandedId === j.id}
+                onToggle={() => {
+                  setExpandedId(prev => prev === j.id ? null : j.id);
+                  Haptics.selectionAsync();
+                }}
+              />
+            ))
+          )}
+        </View>
 
         <View style={{ height: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 90 }} />
       </ScrollView>

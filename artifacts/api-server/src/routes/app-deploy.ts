@@ -35,13 +35,18 @@ export async function restoreApps() {
   const cat = await loadCatalog();
   for (const entry of Object.values(cat)) {
     try {
-      if (!(await stat(entry.cwd).then(s => s.isDirectory()).catch(() => false))) continue;
+      if (!(await stat(entry.cwd).then(s => s.isDirectory()).catch(() => false))) {
+        console.warn(`[restore] Skipping ${entry.id}: cwd not found (${entry.cwd})`);
+        continue;
+      }
+      const isWorker = getAppKind(entry.framework) === "worker";
       await processManager.spawn({
         id: entry.id, name: entry.name, command: entry.command,
         args: entry.args, cwd: entry.cwd, env: entry.env,
         framework: entry.framework, language: entry.language,
+        port: isWorker ? 0 : undefined,
       });
-      console.log(`[restore] Started: ${entry.name} (${entry.id})`);
+      console.log(`[restore] Started: ${entry.name} (${entry.id}) ${isWorker ? "[worker]" : ""}`);
     } catch (e) { console.warn(`[restore] Failed to restart ${entry.id}:`, e); }
   }
 }

@@ -131,6 +131,7 @@ export async function deployFromDir(
 
   const appSlug = slug(name);
   const appDir = path.join(APPS_DIR, appSlug);
+  await rm(appDir, { recursive: true, force: true });
   await mkdir(appDir, { recursive: true });
 
   if (!stack.dockerfile) {

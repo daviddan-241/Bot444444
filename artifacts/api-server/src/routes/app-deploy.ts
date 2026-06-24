@@ -140,77 +140,142 @@ async function readOptional(file: string) {
   try { return await readFile(file, "utf8"); } catch { return undefined; }
 }
 
+/** Read a JSON file, return null on error */
+async function readJson(p: string): Promise<any> {
+  try { return JSON.parse(await readFile(p, "utf8")); } catch { return null; }
+}
+
+/**
+ * Deeply detect framework by reading package.json deps, lockfiles, and file names.
+ * Returns one of: discord-bot | telegram-bot | twitter-bot | whatsapp-bot |
+ *   node-worker | nextjs | react-vite | vue | astro | node-express | node-server |
+ *   python | ruby | go | static | unknown
+ */
 function detectFramework(files: string[], pkg?: any): string {
   const dep = (n: string) => Boolean(pkg?.dependencies?.[n] || pkg?.devDependencies?.[n]);
-  if (dep("discord.js") || dep("discordjs") || dep("@discordjs/rest") || dep("discord-api-types")) return "node-server";
-  if (dep("telegraf") || dep("node-telegram-bot-api") || dep("grammy") || dep("telebot")) return "node-server";
-  if (dep("twitter-api-v2") || dep("twit") || dep("twitter")) return "node-server";
+  // ── Bots & background workers ─────────────────────────────────────────────
+  if (dep("discord.js") || dep("@discordjs/rest") || dep("discord-api-types") || dep("eris") || dep("oceanic.js")) return "discord-bot";
+  if (dep("telegraf") || dep("node-telegram-bot-api") || dep("grammy") || dep("telebot") || dep("telegramsjs")) return "telegram-bot";
+  if (dep("twitter-api-v2") || dep("twit") || dep("twitter") || dep("twitter-lite")) return "twitter-bot";
+  if (dep("whatsapp-web.js") || dep("@whiskeysockets/baileys") || dep("baileys") || dep("@adiwajshing/baileys")) return "whatsapp-bot";
+  if (dep("tmi.js") || dep("twitch.js") || dep("@twurple/api")) return "twitch-bot";
+  if (dep("node-cron") || dep("agenda") || dep("bull") || dep("bullmq") || dep("bee-queue")) {
+    if (!dep("express") && !dep("fastify") && !dep("koa") && !dep("hapi")) return "node-worker";
+  }
+  // ── Web frameworks ────────────────────────────────────────────────────────
   if (dep("next")) return "nextjs";
+  if (dep("@nuxtjs/nuxt") || dep("nuxt") || dep("nuxt3")) return "nuxt";
   if (dep("vite") && dep("react")) return "react-vite";
   if (dep("vite") && dep("vue")) return "vue";
   if (dep("astro")) return "astro";
-  if (dep("fastify") || dep("hapi") || dep("koa")) return "node-server";
+  if (dep("@sveltejs/kit") || dep("svelte")) return "svelte";
   if (dep("express")) return "node-express";
+  if (dep("fastify") || dep("hapi") || dep("@hapi/hapi") || dep("koa")) return "node-server";
+  // ── File-name based detection ─────────────────────────────────────────────
   const filenames = files.map(f => path.basename(f).toLowerCase());
-  if (filenames.some(f => ["bot.js", "bot.ts", "discord.js", "telegram.js"].includes(f))) return "node-server";
-  if (files.some(f => /^(server|index|app)\.(js|ts|mjs|cjs)$/.test(f))) return "node-server";
-  if (files.some(f => /requirements\.txt$/.test(f)) || files.some(f => /^(main|app|server)\.py$/.test(f))) return "python";
+  if (filenames.some(f => ["bot.js", "bot.ts", "bot.mjs"].includes(f))) return "node-worker";
+  if (files.some(f => /requirements\.txt$/.test(f)) || files.some(f => /^(main|app|server|bot)\.py$/.test(f))) return "python";
   if (files.some(f => /^Gemfile$/.test(f))) return "ruby";
   if (files.some(f => /^go\.mod$/.test(f))) return "go";
+  if (files.some(f => /^Cargo\.toml$/.test(f))) return "rust";
   if (!pkg) {
-    if (files.some(f => /^(index|main)\.html$/.test(f))) return "static";
-    if (files.some(f => /\.(html|htm)$/.test(f))) return "static";
+    if (files.some(f => /^(index|main)\.html$/.test(f)) || files.some(f => /\.(html|htm)$/.test(f))) return "static";
   }
+  if (files.some(f => /^(server|index|app|main)\.(js|ts|mjs|cjs)$/.test(f))) return "node-server";
   if (pkg) return "node-server";
   return "unknown";
 }
 
-function isServerApp(framework: string): boolean {
-  return ["node-express", "node-server", "nextjs", "python", "ruby", "go"].includes(framework);
+/**
+ * Determine what kind of app this is:
+ *   "worker"  — background bot/worker, no web port needed
+ *   "web"     — HTTP server, needs a port and URL
+ *   "static"  — built static files, served from CDN-style handler
+ */
+function getAppKind(framework: string): "web" | "worker" | "static" {
+  if (["discord-bot", "telegram-bot", "twitter-bot", "whatsapp-bot", "twitch-bot", "node-worker"].includes(framework)) return "worker";
+  if (["react-vite", "vue", "astro", "svelte", "static"].includes(framework)) return "static";
+  return "web";
 }
+
+function pmBin(pm: string) { return pm === "pnpm" ? "pnpm" : pm === "yarn" ? "yarn" : pm === "bun" ? "bun" : "npm"; }
 
 function getBuildCmds(framework: string, pkg?: any, pm = "npm") {
   const s = (n: string) => pkg?.scripts?.[n];
-  const run = (script: string) => pm === "npm" ? `npm run ${script}` : pm === "pnpm" ? `pnpm run ${script}` : pm === "yarn" ? `yarn run ${script}` : `bun run ${script}`;
+  const run = (script: string) => `${pmBin(pm)} run ${script}`;
   const install = pm === "pnpm" ? "pnpm install --no-frozen-lockfile" : pm === "yarn" ? "yarn install --non-interactive" : pm === "bun" ? "bun install" : "npm install --production=false --legacy-peer-deps";
   switch (framework) {
-    case "nextjs": return { install, build: s("build") ? run("build") : "next build", output: ".next" };
-    case "react-vite": case "vue": case "astro":
+    case "nextjs": case "nuxt": return { install, build: s("build") ? run("build") : `${pmBin(pm)} run build`, output: framework === "nuxt" ? ".output" : ".next" };
+    case "react-vite": case "vue": case "astro": case "svelte":
       return { install, build: s("build") ? run("build") : "vite build", output: "dist" };
     case "node-express": case "node-server":
-      return { install, build: s("build") ? run("build") : "echo no-build", output: "." };
-    case "python": return { install: "pip install -r requirements.txt --no-cache-dir", build: "echo no-build", output: "." };
-    case "static": return { install: "n/a", build: "n/a", output: "." };
-    default: return { install: pkg ? install : "n/a", build: s("build") ? run("build") : "echo no-build", output: "." };
+    case "discord-bot": case "telegram-bot": case "twitter-bot":
+    case "whatsapp-bot": case "twitch-bot": case "node-worker":
+      return { install, build: s("build") ? run("build") : null, output: "." };
+    case "python": return { install: "pip install -r requirements.txt --no-cache-dir", build: null, output: "." };
+    case "ruby": return { install: "bundle install", build: null, output: "." };
+    case "go": return { install: "go mod download", build: "go build -o _app .", output: "." };
+    case "rust": return { install: null, build: "cargo build --release", output: "." };
+    case "static": return { install: null, build: null, output: "." };
+    default: return { install: pkg ? install : null, build: s("build") ? run("build") : null, output: "." };
   }
 }
 
-function getStartCmd(framework: string, pkg?: any, files: string[] = [], pm = "npm"): { cmd: string; args: string[] } {
-  const start = pkg?.scripts?.start;
-  const pmBin = pm === "npm" ? "npm" : pm === "pnpm" ? "pnpm" : pm === "yarn" ? "yarn" : "bun";
-  if (start && !start.includes("react-scripts") && !start.includes("vite")) {
-    if (start.startsWith("node ") || start.startsWith("python ") || start.startsWith("deno ")) {
-      const parts = start.split(" ");
+/**
+ * Get the real start command. Called AFTER install+build so we can check
+ * which entry files actually exist in the final appDir.
+ */
+async function getRealStartCmd(
+  appDir: string, framework: string, pkg: any, pm = "npm",
+): Promise<{ cmd: string; args: string[] }> {
+  const bin = pmBin(pm);
+  const scripts: Record<string, string> = pkg?.scripts ?? {};
+  const startScript: string | undefined = scripts.start;
+
+  // If package.json has a start script, trust it as the source of truth
+  if (startScript && !startScript.includes("react-scripts") && !startScript.includes("vite preview")) {
+    // Direct runtime invocation: "node server.js", "python bot.py", etc.
+    if (/^(node|node\.|python3?|bun|deno|ruby|php)\s+/.test(startScript.trim())) {
+      const parts = startScript.trim().split(/\s+/);
       return { cmd: parts[0], args: parts.slice(1) };
     }
-    return { cmd: pmBin, args: ["run", "start"] };
+    // npm/pnpm/yarn run start
+    return { cmd: bin, args: ["run", "start"] };
   }
+
+  // No start script — auto-detect from files that actually exist
+  const exists = async (rel: string) => {
+    try { await stat(path.join(appDir, rel)); return true; } catch { return false; }
+  };
+
   switch (framework) {
-    case "nextjs": return { cmd: "npx", args: ["next", "start", "-p", "${PORT}"] };
-    case "node-express": case "node-server": {
-      const main = pkg?.main;
-      if (main) return { cmd: "node", args: [main] };
-      for (const f of ["dist/index.js", "dist/server.js", "server.js", "index.js", "app.js", "main.js", "bot.js"]) {
-        if (files.includes(f) || files.includes(f.replace(/^dist\//, ""))) return { cmd: "node", args: [f] };
+    case "nextjs":
+      return { cmd: bin, args: ["run", scripts.start ? "start" : "start"] };
+    case "python": {
+      for (const f of ["main.py", "app.py", "server.py", "bot.py", "index.py"]) {
+        if (await exists(f)) return { cmd: "python3", args: [f] };
+      }
+      return { cmd: "python3", args: ["app.py"] };
+    }
+    case "ruby": {
+      if (await exists("config/application.rb")) return { cmd: "bundle", args: ["exec", "rails", "server", "-b", "0.0.0.0", "-p", "$PORT"] };
+      return { cmd: "ruby", args: ["app.rb"] };
+    }
+    case "go":
+      return { cmd: "./_app", args: [] };
+    case "rust": {
+      if (pkg?.name) return { cmd: `./target/release/${pkg.name}`, args: [] };
+      return { cmd: "./target/release/app", args: [] };
+    }
+    default: {
+      // Check pkg.main first
+      if (pkg?.main && await exists(pkg.main)) return { cmd: "node", args: [pkg.main] };
+      // Common entry point candidates
+      for (const f of ["dist/index.js", "dist/server.js", "dist/app.js", "dist/main.js", "server.js", "index.js", "app.js", "main.js", "bot.js", "src/index.js"]) {
+        if (await exists(f)) return { cmd: "node", args: [f] };
       }
       return { cmd: "node", args: ["index.js"] };
     }
-    case "python": {
-      if (files.includes("main.py")) return { cmd: "python", args: ["main.py"] };
-      if (files.includes("app.py")) return { cmd: "python", args: ["app.py"] };
-      return { cmd: "python", args: ["server.py"] };
-    }
-    default: return { cmd: "node", args: ["index.js"] };
   }
 }
 
@@ -251,81 +316,56 @@ async function cpExcludeNodeModules(src: string, dest: string): Promise<void> {
   }));
 }
 
+async function runBuild(dir: string, buildCmd: string, log: (m: string) => void): Promise<void> {
+  log(`🔨 Building (${buildCmd})…`);
+  const parts = buildCmd.trim().split(/\s+/);
+  const result = await new Promise<{ code: number; out: string }>((resolve) => {
+    execFile(parts[0], parts.slice(1), {
+      cwd: dir, shell: true, timeout: 20 * 60 * 1000, maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, CI: "true", NODE_ENV: "production" },
+    }, (error, stdout, stderr) => {
+      const rawCode = (error as any)?.code;
+      const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
+      resolve({ code, out: (stderr || stdout || String(error?.message || "")).slice(0, 8000) });
+    });
+  });
+  if (result.code !== 0) throw new Error(`Build failed (exit ${result.code}): ${result.out.slice(0, 500)}`);
+  log("✅ Build complete.");
+}
+
 async function deployApp(opts: {
   sourceDir: string; name: string; slug: string;
   framework: string; files: string[]; pkg?: any;
   log: (m: string) => void; origin: string;
 }) {
-  const { sourceDir, name, slug, framework, files, pkg, log, origin } = opts;
+  const { sourceDir, name, slug, framework, log, origin } = opts;
 
-  // Detect package manager from lockfiles in the actual source
-  const sourceFiles = await readdir(sourceDir).catch(() => [] as string[]);
-  const pm = detectPackageManager(sourceFiles);
+  // Re-read package.json from actual source (more reliable than the caller's parse)
+  const pkg = await readJson(path.join(sourceDir, "package.json")) ?? opts.pkg;
+
+  // Detect PM from lockfiles present in source root
+  const rootFiles = await readdir(sourceDir).catch(() => [] as string[]);
+  const pm = detectPackageManager(rootFiles);
   log(`🔧 Package manager: ${pm}`);
+
+  const appKind = getAppKind(framework);
+  log(`📋 App type: ${framework} (${appKind})`);
 
   const cmds = getBuildCmds(framework, pkg, pm);
 
-  if (isServerApp(framework)) {
-    // ── LIVE APP PATH ────────────────────────────────────────────────────────
-    // Copy source → final destination FIRST, then install+build there.
-    // This guarantees node_modules is always in the directory where the app runs.
-    const appDest = path.join(APP_ROOT, slug);
-    await mkdir(APP_ROOT, { recursive: true });
-    await rm(appDest, { recursive: true, force: true });
-
-    log(`📁 Copying source files…`);
-    // Copy source without node_modules (it isn't there yet — install runs next)
-    await cpExcludeNodeModules(sourceDir, appDest);
-
-    if (cmds.install !== "n/a") {
-      await runInstall(appDest, pm, log);
+  // ── STATIC SITES: install + build in temp, copy output to static store ────
+  if (appKind === "static") {
+    if (cmds.install) {
+      await runInstall(sourceDir, pm, log);
     }
-
-    if (cmds.build !== "n/a" && !cmds.build.startsWith("echo")) {
-      log(`🔨 Building (${cmds.build})…`);
-      const [cmd, ...args] = cmds.build.split(" ");
-      const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-        execFile(cmd, args, {
-          cwd: appDest, timeout: 15 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
-          env: { ...process.env, CI: "true", NODE_ENV: "production" },
-        }, (error, stdout, stderr) => {
-          const rawCode = (error as any)?.code;
-          const code = typeof rawCode === "number" ? rawCode : error ? 127 : 0;
-          resolve({ code, stdout: stdout.slice(0, 8000), stderr: (stderr || String(error?.message || "")).slice(0, 8000) });
-        });
-      });
-      if (result.code !== 0) throw new Error(`Build failed: ${(result.stderr || result.stdout).slice(0, 500)}`);
-      log("✅ Build complete.");
+    if (cmds.build) {
+      await runBuild(sourceDir, cmds.build, log);
     }
-
-    const startCmd = getStartCmd(framework, pkg, files, pm);
-    log(`🚀 Starting: ${startCmd.cmd} ${startCmd.args.join(" ")}`);
-
-    await processManager.spawn({
-      id: slug, name, command: startCmd.cmd, args: startCmd.args,
-      cwd: appDest, framework, language: framework,
-    });
-
-    const appUrl = `${origin}/app/${slug}/`;
-    processManager.updateUrl(slug, appUrl);
-
-    const cat = await loadCatalog();
-    cat[slug] = {
-      id: slug, name, command: startCmd.cmd, args: startCmd.args,
-      cwd: appDest, env: {}, framework, language: framework, createdAt: Date.now(),
-    };
-    await saveCatalog(cat);
-
-    log(`✅ Live at ${appUrl}`);
-    return { type: "live-app", slug, url: appUrl, framework };
-  } else {
     const { LOCAL_SITE_ROOT } = await import("./static-serve");
     const siteDest = path.join(LOCAL_SITE_ROOT, slug);
-    log(`📁 Copying files to site store…`);
-    await mkdir(siteDest, { recursive: true });
     await rm(siteDest, { recursive: true, force: true });
     await mkdir(siteDest, { recursive: true });
-    const outputSrc = cmds.output === "." ? sourceDir : path.join(sourceDir, cmds.output);
+    const outputSrc = (cmds.output === "." || !cmds.output) ? sourceDir : path.join(sourceDir, cmds.output);
     const outStat = await stat(outputSrc).catch(() => null);
     if (!outStat?.isDirectory()) {
       log(`⚠️  Output dir '${cmds.output}' not found — serving root files.`);
@@ -336,10 +376,8 @@ async function deployApp(opts: {
     const idxPath = path.join(siteDest, "index.html");
     const hasIndex = await stat(idxPath).then(s => s.isFile()).catch(() => false);
     if (!hasIndex) {
-      const allFiles = await walk(siteDest);
-      const htmlFile = allFiles.find(f => f.endsWith(".html"));
+      const htmlFile = (await walk(siteDest)).find(f => f.endsWith(".html"));
       if (!htmlFile) log(`⚠️  No index.html found — files copied but site may not load.`);
-      else log(`⚠️  index.html missing at root — found ${htmlFile} instead.`);
     }
     const siteUrl = `${origin}/api/s/${slug}/`;
     const sitesCat = await loadSitesCatalog();
@@ -348,6 +386,54 @@ async function deployApp(opts: {
     log(`✅ Static site live at ${siteUrl}`);
     return { type: "static-site", slug, url: siteUrl, framework };
   }
+
+  // ── WORKERS & WEB APPS: copy → install → build in final dir ──────────────
+  const appDest = path.join(APP_ROOT, slug);
+  await mkdir(APP_ROOT, { recursive: true });
+  await rm(appDest, { recursive: true, force: true });
+
+  log(`📁 Copying source files to ${path.basename(appDest)}…`);
+  await cpExcludeNodeModules(sourceDir, appDest);
+
+  if (cmds.install) {
+    await runInstall(appDest, pm, log);
+  }
+
+  if (cmds.build) {
+    await runBuild(appDest, cmds.build, log);
+  }
+
+  // Determine real start command by inspecting files that NOW exist in appDest
+  const startCmd = await getRealStartCmd(appDest, framework, pkg, pm);
+  log(`🚀 Starting: ${startCmd.cmd} ${startCmd.args.join(" ")}`);
+
+  if (appKind === "worker") {
+    // ── BACKGROUND WORKER / BOT ───────────────────────────────────────────
+    await processManager.spawn({
+      id: slug, name, command: startCmd.cmd, args: startCmd.args,
+      cwd: appDest, port: 0, framework, language: "javascript",
+    });
+    const cat = await loadCatalog();
+    cat[slug] = { id: slug, name, command: startCmd.cmd, args: startCmd.args, cwd: appDest, env: {}, framework, language: "javascript", createdAt: Date.now() };
+    await saveCatalog(cat);
+    log(`✅ Worker is running (background process — no URL)`);
+    return { type: "worker", slug, url: null, framework };
+  }
+
+  // ── WEB SERVER ────────────────────────────────────────────────────────────
+  await processManager.spawn({
+    id: slug, name, command: startCmd.cmd, args: startCmd.args,
+    cwd: appDest, framework, language: "javascript",
+  });
+  const appUrl = `${origin}/app/${slug}/`;
+  processManager.updateUrl(slug, appUrl);
+
+  const cat = await loadCatalog();
+  cat[slug] = { id: slug, name, command: startCmd.cmd, args: startCmd.args, cwd: appDest, env: {}, framework, language: "javascript", createdAt: Date.now() };
+  await saveCatalog(cat);
+
+  log(`✅ Live at ${appUrl}`);
+  return { type: "live-app", slug, url: appUrl, framework };
 }
 
 // POST /api/real/app-deploy/zip

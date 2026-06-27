@@ -277,10 +277,90 @@ export async function detectStack(dir: string): Promise<StackInfo> {
   const procfile = await parseProcfile(dir);
   if (procfile) detected.push(`Procfile (${Object.keys(procfile).join(", ")})`);
 
-  // 2. Dockerfile
+  // 2. Dockerfile — parse it, extract language + CMD, prefer native runtime over docker run
   if (hasFile("Dockerfile") || hasFile("dockerfile")) {
     detected.push("Dockerfile");
-    return { language: "docker", framework: "docker", runtime: "docker", packageManager: "none", installCmd: null, buildCmd: null, startCmd: procfile?.web ?? "docker run -p $PORT:$PORT app", port: 3000, outputDir: null, dockerfile: true, procfile, detected, confidence: "high", appKind: "web" };
+
+    const dfName    = hasFile("Dockerfile") ? "Dockerfile" : "dockerfile";
+    const dfContent = await readText(path.join(dir, dfName));
+
+    // FROM image → language hint
+    const fromImg = (dfContent.match(/^FROM\s+([^\s:@]+)/mi)?.[1] ?? "").toLowerCase();
+
+    // CMD ["sh", "-c", "node server.js"]  OR  CMD node server.js
+    function parseDockerCmd(raw: string): string | null {
+      raw = raw.trim();
+      if (raw.startsWith("[")) {
+        try {
+          const arr: string[] = JSON.parse(raw);
+          // If it's ["sh", "-c", "actual_cmd"], return the actual_cmd
+          if (arr[0] === "sh" && arr[1] === "-c" && arr[2]) return arr[2];
+          return arr.join(" ");
+        } catch { /* fall through */ }
+      }
+      return raw || null;
+    }
+
+    const cmdRaw    = dfContent.match(/^CMD\s+(.+)$/mi)?.[1];
+    const entryRaw  = dfContent.match(/^ENTRYPOINT\s+(.+)$/mi)?.[1];
+    const dockerCmd = parseDockerCmd(cmdRaw ?? entryRaw ?? "") ?? null;
+
+    // Check if native project files exist alongside the Dockerfile
+    const hasNativeFiles = hasFile("package.json") || hasFile("requirements.txt") ||
+      hasFile("pyproject.toml") || hasFile("go.mod") || hasFile("Cargo.toml") ||
+      hasFile("Gemfile") || hasFile("pom.xml") || hasFile("build.gradle") ||
+      hasFile("deno.json") || hasFile("deno.jsonc");
+
+    if (hasNativeFiles) {
+      // Other language files found — skip Dockerfile, fall through to native detection
+      detected.push("Dockerfile found but native project files also present — using native runtime");
+      // fall through to Python/Node/etc. detection below
+    } else {
+      // Pure Dockerfile project — derive native runtime from FROM image instead of running docker run
+      detected.push(`Dockerfile FROM: ${fromImg || "unknown"}`);
+      if (dockerCmd) detected.push(`Dockerfile CMD: ${dockerCmd}`);
+
+      let language = "unknown"; let pm = "none";
+      let installCmd: string | null = null; let buildCmd: string | null = null;
+      let startCmd = procfile?.web ?? dockerCmd ?? "node index.js";
+      let port = 3000;
+
+      if (fromImg.includes("node") || fromImg.includes("bun")) {
+        language = "javascript"; pm = "npm"; port = 3000;
+        installCmd = "npm install --production=false --legacy-peer-deps";
+        startCmd = procfile?.web ?? dockerCmd ?? "node index.js";
+      } else if (fromImg.includes("python")) {
+        language = "python"; pm = "pip"; port = 8000;
+        installCmd = "pip install -r requirements.txt --no-cache-dir --break-system-packages";
+        startCmd = procfile?.web ?? dockerCmd ?? "python main.py";
+      } else if (fromImg.includes("golang") || fromImg.startsWith("go:")) {
+        language = "go"; pm = "go"; port = 8080;
+        installCmd = "go mod download"; buildCmd = "go build -o app .";
+        startCmd = procfile?.web ?? dockerCmd ?? "./app";
+      } else if (fromImg.includes("rust")) {
+        language = "rust"; pm = "cargo"; port = 8080;
+        buildCmd = "cargo build --release";
+        startCmd = procfile?.web ?? dockerCmd ?? "./target/release/app";
+      } else if (fromImg.includes("ruby")) {
+        language = "ruby"; pm = "bundler"; port = 3000;
+        installCmd = "bundle install";
+        startCmd = procfile?.web ?? dockerCmd ?? "bundle exec ruby app.rb";
+      } else if (fromImg.includes("php")) {
+        language = "php"; pm = "composer"; port = 8080;
+        installCmd = "composer install --no-dev --no-interaction";
+        startCmd = procfile?.web ?? dockerCmd ?? "php -S 0.0.0.0:$PORT";
+      } else if (fromImg.includes("java") || fromImg.includes("openjdk") || fromImg.includes("eclipse-temurin")) {
+        language = "java"; pm = "maven"; port = 8080;
+        startCmd = procfile?.web ?? dockerCmd ?? "java -jar *.jar";
+      }
+
+      const confidence = dockerCmd ? "medium" : "low";
+      return {
+        language, framework: "dockerfile", runtime: language || "node", packageManager: pm,
+        installCmd, buildCmd, startCmd, port, outputDir: null, dockerfile: true,
+        procfile, detected, confidence, appKind: "web",
+      };
+    }
   }
 
   // ── Decide between Python and Node when both exist ──────────────────────

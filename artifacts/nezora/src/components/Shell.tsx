@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   LayoutDashboard, Rocket, Box, Globe, Database, HardDrive,
-  Bot, Zap, Activity, FileText, LayoutGrid, Settings, Server,
-  Bell, Plus, GitBranch, Cpu, MoreHorizontal, Link2, Code2, Wrench
+  Zap, Activity, FileText, LayoutGrid, Settings, Server,
+  Bell, Plus, GitBranch, Cpu, Link2, Wrench, Bot
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -32,17 +32,11 @@ const NAV_SECTIONS = [
     ]
   },
   {
-    section: 'Intelligence',
-    items: [
-      { label: 'AI Assistant', href: '/ai', icon: Bot },
-      { label: 'Automation', href: '/automation', icon: Zap },
-    ]
-  },
-  {
     section: 'Observe',
     items: [
       { label: 'Monitoring', href: '/monitoring', icon: Activity },
       { label: 'Logs', href: '/logs', icon: FileText },
+      { label: 'Automation', href: '/automation', icon: Zap },
     ]
   },
   {
@@ -50,6 +44,7 @@ const NAV_SECTIONS = [
     items: [
       { label: 'Templates', href: '/templates', icon: LayoutGrid },
       { label: 'Providers', href: '/providers', icon: Server },
+      { label: 'AI Engine', href: '/ai', icon: Bot },
       { label: 'Settings', href: '/settings', icon: Settings },
     ]
   },
@@ -57,9 +52,9 @@ const NAV_SECTIONS = [
 
 const BOTTOM_TABS = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { label: 'Builder', href: '/deploy', icon: Wrench },
-  { label: 'Code', href: '/ai', icon: Code2, accent: true },
-  { label: 'Deploy', href: '/processes', icon: Rocket },
+  { label: 'Deploy', href: '/deploy', icon: Rocket },
+  { label: 'Apps', href: '/processes', icon: Activity },
+  { label: 'Projects', href: '/projects', icon: Box },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -73,51 +68,48 @@ function NavItem({ href, label, icon: Icon, pathname }: { href: string; label: s
   );
 }
 
-// Cloud logo SVG
-function CloudLogo({ size = 32 }: { size?: number }) {
+function NezoraMark({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="cloudGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#0F2460" />
-          <stop offset="50%" stopColor="#1E5FD4" />
-          <stop offset="100%" stopColor="#4A9BFF" />
+        <linearGradient id="nzGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0A1628" />
+          <stop offset="50%" stopColor="#1246C8" />
+          <stop offset="100%" stopColor="#3D8EFF" />
         </linearGradient>
-        <linearGradient id="cloudShine" x1="0" y1="0" x2="0" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.15)" />
+        <linearGradient id="nzShine" x1="0" y1="0" x2="0" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.18)" />
           <stop offset="100%" stopColor="rgba(255,255,255,0)" />
         </linearGradient>
       </defs>
-      <rect width="64" height="64" rx="16" fill="url(#cloudGrad)" />
-      <rect width="64" height="64" rx="16" fill="url(#cloudShine)" />
-      {/* Cloud shape */}
+      <rect width="64" height="64" rx="17" fill="url(#nzGrad)" />
+      <rect width="64" height="64" rx="17" fill="url(#nzShine)" />
+      {/* Cloud body */}
       <path
-        d="M46 37a8 8 0 00-7-7.93A11 11 0 0017 34a8 8 0 000 16h29a8 8 0 000-13z"
+        d="M44 38a7 7 0 00-6.13-6.94A10 10 0 0019 36a7 7 0 000 14h25a7 7 0 000-12z"
         fill="white"
-        opacity="0.96"
+        opacity="0.95"
       />
       {/* Upload arrow */}
-      <path d="M32 30v-10M28.5 23l3.5-3.5 3.5 3.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
-      {/* Shine dot */}
-      <circle cx="50" cy="14" r="4" fill="rgba(255,255,255,0.25)" />
+      <line x1="32" y1="32" x2="32" y2="21" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+      <polyline points="27.5,25.5 32,21 36.5,25.5" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Accent dot */}
+      <circle cx="49" cy="15" r="4.5" fill="rgba(255,255,255,0.22)" />
     </svg>
   );
 }
 
-// User avatar — real styled avatar instead of plain "D"
 function UserAvatar({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="avatarGrad" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#1E5FD4" />
-          <stop offset="100%" stopColor="#4A9BFF" />
+          <stop offset="0%" stopColor="#1246C8" />
+          <stop offset="100%" stopColor="#3D8EFF" />
         </linearGradient>
       </defs>
       <rect width="56" height="56" rx="14" fill="url(#avatarGrad)" />
-      {/* Head */}
       <circle cx="28" cy="22" r="9" fill="rgba(255,255,255,0.9)" />
-      {/* Body */}
       <path d="M10 50c0-9.94 8.06-18 18-18s18 8.06 18 18" fill="rgba(255,255,255,0.85)" />
     </svg>
   );
@@ -128,14 +120,14 @@ export function Shell({ children, title, action }: { children: ReactNode; title?
 
   return (
     <div className="app-shell">
-      {/* ── Desktop Sidebar ── */}
+      {/* Desktop Sidebar */}
       <aside className="sidebar">
         <div style={{ padding: '18px 16px 12px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-            <CloudLogo size={38} />
+            <NezoraMark size={38} />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '.01em' }}>DANNY'S</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '.02em' }}>Cloud</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '.01em' }}>Nezora</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '.02em' }}>Deploy Center</div>
             </div>
           </div>
         </div>
@@ -162,15 +154,14 @@ export function Shell({ children, title, action }: { children: ReactNode; title?
         </div>
       </aside>
 
-      {/* ── Main Area ── */}
+      {/* Main Area */}
       <div className="main-content">
         <header className="topbar">
-          {/* Mobile: show logo in topbar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} className="md:hidden">
-            <CloudLogo size={30} />
+            <NezoraMark size={30} />
           </div>
           <div style={{ flex: 1, fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-.01em' }}>
-            {title ?? 'Danny\'s Cloud OS'}
+            {title ?? 'Nezora Deploy Center'}
           </div>
           {action}
           <button className="btn-icon btn btn-secondary" style={{ flexShrink: 0 }} onClick={() => window.location.href = '/deploy'}>
@@ -185,21 +176,11 @@ export function Shell({ children, title, action }: { children: ReactNode; title?
         </main>
       </div>
 
-      {/* ── Mobile Bottom Tab Bar ── */}
+      {/* Mobile Bottom Tab Bar */}
       <nav className="bottom-tabs">
         {BOTTOM_TABS.map(tab => {
           const active = pathname === tab.href || (tab.href !== '/' && pathname.startsWith(tab.href));
           const Icon = tab.icon;
-          if (tab.accent) {
-            return (
-              <Link key={tab.href} href={tab.href} className="tab-item" style={{ gap: 2 }}>
-                <div className="tab-item-active-dot" style={active ? {} : { background: 'rgba(74,155,255,0.18)', boxShadow: 'none' }}>
-                  <Icon size={18} color={active ? '#fff' : 'var(--blue)'} strokeWidth={2} />
-                </div>
-                <span style={{ color: active ? 'var(--blue)' : 'var(--text-tertiary)' }}>{tab.label}</span>
-              </Link>
-            );
-          }
           return (
             <Link key={tab.href} href={tab.href} className={`tab-item ${active ? 'active' : ''}`}>
               <Icon className="tab-icon" strokeWidth={active ? 2.2 : 1.6} />

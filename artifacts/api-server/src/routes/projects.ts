@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 import { processManager } from "../lib/process-manager";
 
 const router: IRouter = Router();
-const DATA_DIR = process.env.NEZORA_DATA_DIR || "/tmp/nezora-data";
+const DATA_DIR = process.env.NEZORA_DATA_DIR ?? path.join(process.cwd(), ".nezora-data");
 const PROJECTS_FILE = path.join(DATA_DIR, "projects.json");
 
 export async function loadProjects(): Promise<any[]> {

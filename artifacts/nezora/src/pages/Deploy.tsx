@@ -11,41 +11,69 @@ const DEPLOY_STORAGE_KEY = 'nezora_deploy_form';
 
 type InputMode = 'zip' | 'git';
 
-interface FrameworkBadge {
+interface LangBadge {
   label: string;
-  type: 'live' | 'static';
-  color: string;
+  type: 'live' | 'static' | 'worker';
   hint: string;
 }
 
-const SUPPORTED: FrameworkBadge[] = [
-  { label: 'React / Vite',        type: 'static', color: '#61DAFB', hint: 'Builds to static files — served via CDN' },
-  { label: 'Next.js',             type: 'live',   color: '#fff',    hint: 'Live Node.js process — SSR + API routes' },
-  { label: 'Node.js / Express',   type: 'live',   color: '#34C759', hint: 'Live Node.js server process' },
-  { label: 'Python / Flask / FastAPI', type: 'live', color: '#3776AB', hint: 'Live Python process — auto-detects framework' },
-  { label: 'Discord Bot',         type: 'live',   color: '#5865F2', hint: 'Live Node.js bot process — never served as static' },
-  { label: 'Telegram Bot',        type: 'live',   color: '#26A5E4', hint: 'Live Node.js or Python bot process' },
-  { label: 'Twitter Bot',         type: 'live',   color: '#1DA1F2', hint: 'Live Node.js bot — auto-detected from twitter-api-v2' },
-  { label: 'Static HTML',         type: 'static', color: '#FF9500', hint: 'Plain HTML/CSS/JS — hosted as a static site' },
-  { label: 'Ruby / Sinatra',      type: 'live',   color: '#CC342D', hint: 'Live Ruby/Rails process' },
-  { label: 'Go',                  type: 'live',   color: '#00ADD8', hint: 'Compiled Go binary — live process' },
-  { label: 'PHP',                 type: 'live',   color: '#8892BF', hint: 'Live PHP built-in server' },
-  { label: 'Bun / Deno',         type: 'live',   color: '#f472b6', hint: 'Live Bun/Deno runtime process' },
+const SUPPORTED: LangBadge[] = [
+  // Node / JS
+  { label: 'Node.js / Express',        type: 'live',   hint: 'Auto-detected from package.json — any Express/Fastify/Koa/Hapi server' },
+  { label: 'Next.js',                  type: 'live',   hint: 'SSR + API routes — builds with npm run build then starts live server' },
+  { label: 'React / Vite',             type: 'static', hint: 'Builds to static files via Vite — served instantly from CDN' },
+  { label: 'Vue / Nuxt',               type: 'live',   hint: 'Vue SPA (static) or Nuxt SSR (live process)' },
+  { label: 'Svelte / SvelteKit',       type: 'static', hint: 'Built with Vite, served as static or adapter-node' },
+  { label: 'Astro / Gatsby / Eleventy',type: 'static', hint: 'Static site generators — builds then serves from CDN' },
+  { label: 'NestJS / AdonisJS',        type: 'live',   hint: 'TypeScript backend frameworks — build + start live process' },
+  { label: 'Discord Bot',              type: 'worker', hint: 'Discord.js / Eris / Oceanic — background worker, no web port' },
+  { label: 'Telegram Bot',             type: 'worker', hint: 'Telegraf / Grammy / node-telegram-bot-api — background worker' },
+  { label: 'Twitter / Twitch Bot',     type: 'worker', hint: 'twitter-api-v2 / tmi.js — background worker process' },
+  { label: 'WhatsApp Bot',             type: 'worker', hint: 'Baileys / whatsapp-web.js — background worker' },
+  { label: 'BullMQ / Agenda Worker',   type: 'worker', hint: 'Queue workers without a web server — background process' },
+  // Python
+  { label: 'Python / Flask',           type: 'live',   hint: 'pip / poetry / pipenv — auto-detects Flask, starts with python app.py' },
+  { label: 'FastAPI / Starlette',      type: 'live',   hint: 'ASGI — starts with uvicorn on $PORT automatically' },
+  { label: 'Django',                   type: 'live',   hint: 'Auto-runs python manage.py runserver 0.0.0.0:$PORT' },
+  { label: 'Streamlit / Gradio / Dash',type: 'live',   hint: 'Data apps — started on $PORT with correct server flags' },
+  { label: 'Discord.py Bot',           type: 'worker', hint: 'discord.py / nextcord / hikari — background worker' },
+  { label: 'Python Telegram Bot',      type: 'worker', hint: 'python-telegram-bot / aiogram / pyrogram — background worker' },
+  { label: 'Python Script',            type: 'live',   hint: 'Any Python script — auto-detects main.py / app.py / server.py' },
+  // Go / Rust / Ruby / PHP / Java
+  { label: 'Go',                       type: 'live',   hint: 'go.mod detected — runs go mod download then go build then binary' },
+  { label: 'Rust',                     type: 'live',   hint: 'Cargo.toml — cargo build --release then starts compiled binary' },
+  { label: 'Ruby / Rails / Sinatra',   type: 'live',   hint: 'Gemfile detected — bundle install then start server on $PORT' },
+  { label: 'PHP / Laravel',            type: 'live',   hint: 'composer install then php -S or artisan serve on $PORT' },
+  { label: 'Java / Spring (Maven)',     type: 'live',   hint: 'pom.xml — mvn package then java -jar target/*.jar' },
+  { label: 'Java / Gradle',            type: 'live',   hint: 'build.gradle — gradle build then java -jar build/libs/*.jar' },
+  // Others
+  { label: 'Deno',                     type: 'live',   hint: 'deno.json detected — deno run --allow-all main.ts' },
+  { label: 'Bun',                      type: 'live',   hint: 'bun install + bun run — faster Node alternative' },
+  { label: 'Static HTML',              type: 'static', hint: 'index.html detected — served with npx serve instantly' },
+  { label: 'Dockerfile',               type: 'live',   hint: 'Uses your own Dockerfile — full control over environment' },
+  { label: 'Procfile',                 type: 'live',   hint: 'Procfile web: line used as start command (like Render / Heroku)' },
 ];
+
+const TYPE_COLORS = {
+  live:   { bg: 'rgba(52,199,89,0.10)',   border: 'rgba(52,199,89,0.30)',   text: '#34C759', dot: '#34C759',   label: 'Live Process' },
+  static: { bg: 'rgba(0,122,255,0.10)',   border: 'rgba(0,122,255,0.30)',   text: '#007AFF', dot: '#007AFF',   label: 'Static Site'  },
+  worker: { bg: 'rgba(88,86,214,0.10)',   border: 'rgba(88,86,214,0.30)',   text: '#5856D6', dot: '#5856D6',   label: 'Background Worker' },
+};
 
 interface EnvVar { key: string; value: string }
 
 function LogLine({ line }: { line: string }) {
-  const isErr = /\[ERR\]|error|failed|Error/i.test(line) && !/success|done|live/i.test(line);
-  const isOk = /success|done|live|complete|installed/i.test(line) && !/ERR/i.test(line);
-  const isInfo = /detecting|cloning|extracting|copying|installing|building|starting|queuing/i.test(line);
-  const isWarn = /warn|skipping|fallback|not found/i.test(line);
-  const color = isErr ? '#FF3B30' : isWarn ? '#FF9500' : isOk ? '#34C759' : isInfo ? '#007AFF' : '#e5e5e5';
-  return <div style={{ color, fontFamily: 'monospace', fontSize: 12, padding: '1px 0', wordBreak: 'break-all' }}>{line}</div>;
+  const lo = line.toLowerCase();
+  const isErr  = /\[err\]|error|failed|exception/i.test(line) && !/success|complete|installed/.test(lo);
+  const isOk   = /success|complete|installed|live at|built in|done/i.test(line);
+  const isInfo = /detecting|cloning|extracting|copying|installing|building|starting|queuing|downloading|rewriting/i.test(line);
+  const isWarn = /warn|skipping|fallback|not found|trying/i.test(line);
+  const color  = isErr ? '#FF3B30' : isWarn ? '#FF9500' : isOk ? '#34C759' : isInfo ? '#007AFF' : '#e5e5e5';
+  return <div style={{ color, fontFamily: 'monospace', fontSize: 12, padding: '1px 0', wordBreak: 'break-all', lineHeight: 1.55 }}>{line}</div>;
 }
 
 function EnvEditor({ vars, onChange }: { vars: EnvVar[]; onChange: (v: EnvVar[]) => void }) {
-  const add = () => onChange([...vars, { key: '', value: '' }]);
+  const add    = () => onChange([...vars, { key: '', value: '' }]);
   const remove = (i: number) => onChange(vars.filter((_, idx) => idx !== i));
   const update = (i: number, field: 'key' | 'value', val: string) => {
     const next = [...vars]; next[i] = { ...next[i], [field]: val }; onChange(next);
@@ -64,7 +92,7 @@ function EnvEditor({ vars, onChange }: { vars: EnvVar[]; onChange: (v: EnvVar[])
         </div>
       ))}
       {vars.length === 0 && (
-        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>No env vars. Add PORT, API_KEY, BOT_TOKEN, etc.</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>No env vars. Add PORT, API_KEY, BOT_TOKEN, DATABASE_URL, etc.</div>
       )}
     </div>
   );
@@ -80,6 +108,7 @@ export default function Deploy() {
   const [customSlug, setCustomSlug] = useState(() => { try { return localStorage.getItem(`${DEPLOY_STORAGE_KEY}_slug`) || ''; } catch { return ''; } });
   const [gitUrl, setGitUrl] = useState(() => { try { return localStorage.getItem(`${DEPLOY_STORAGE_KEY}_gitUrl`) || ''; } catch { return ''; } });
   const [gitBranch, setGitBranch] = useState(() => { try { return localStorage.getItem(`${DEPLOY_STORAGE_KEY}_branch`) || 'main'; } catch { return 'main'; } });
+  const [gitToken, setGitToken] = useState('');
 
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -91,14 +120,14 @@ export default function Deploy() {
   const [result, setResult] = useState<any>(null);
   const [hoveredBadge, setHoveredBadge] = useState<number | null>(null);
 
-  const logRef = useRef<HTMLDivElement>(null);
+  const logRef  = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_mode`, input); } catch {} }, [input]);
-  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_name`, name); } catch {} }, [name]);
-  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_slug`, customSlug); } catch {} }, [customSlug]);
-  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_gitUrl`, gitUrl); } catch {} }, [gitUrl]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_mode`,   input);     } catch {} }, [input]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_name`,   name);      } catch {} }, [name]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_slug`,   customSlug);} catch {} }, [customSlug]);
+  useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_gitUrl`, gitUrl);    } catch {} }, [gitUrl]);
   useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_branch`, gitBranch); } catch {} }, [gitBranch]);
 
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
@@ -146,15 +175,18 @@ export default function Deploy() {
         r = await fetch(`${base}/api/real/app-deploy/git`, {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: gitUrl, branch: gitBranch || 'main', name: name || undefined, slug: customSlug || undefined, env: envObj() }),
+          body: JSON.stringify({
+            url: gitUrl, branch: gitBranch || 'main',
+            name: name || undefined, slug: customSlug || undefined,
+            token: gitToken || undefined, env: envObj(),
+          }),
         });
       }
       const data = await r.json();
       if (!data.ok || !data.jobId) {
         setLogs([`[ERR] ${data.message ?? 'Queue failed'}`]);
         setResult({ ok: false, error: data.message ?? 'Queue failed' });
-        setDeploying(false);
-        return;
+        setDeploying(false); return;
       }
       setJobId(data.jobId);
       setLogs(prev => [...prev, `Queued — Job: ${data.jobId.slice(-10)}`]);
@@ -176,59 +208,58 @@ export default function Deploy() {
 
   return (
     <Shell title="Deploy Center">
-      <div className="animate-rise" style={{ maxWidth: 720, margin: '0 auto' }}>
+      <div className="animate-rise" style={{ maxWidth: 740, margin: '0 auto' }}>
         <div style={{ marginBottom: 16 }}>
           <div className="section-title">Deploy Center</div>
-          <div className="section-subtitle">Drop a ZIP or paste a Git URL — auto-detects everything and deploys it live</div>
+          <div className="section-subtitle">
+            Drop a ZIP or paste a Git URL — auto-detects Node.js, Python, Go, Rust, Ruby, PHP, Java, Deno, and more
+          </div>
         </div>
 
-        {/* Framework badges */}
-        <div style={{ marginBottom: 18 }}>
+        {/* Framework badge grid */}
+        <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Info size={11} /> Hover a badge to see how it deploys
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {SUPPORTED.map((f, i) => (
-              <div key={f.label} style={{ position: 'relative' }}>
-                <span
-                  onMouseEnter={() => setHoveredBadge(i)}
-                  onMouseLeave={() => setHoveredBadge(null)}
-                  style={{
-                    fontSize: 11, padding: '4px 9px', borderRadius: 20, cursor: 'default',
-                    background: f.type === 'live' ? 'rgba(52,199,89,0.1)' : 'rgba(0,122,255,0.1)',
-                    border: `1px solid ${f.type === 'live' ? 'rgba(52,199,89,0.3)' : 'rgba(0,122,255,0.3)'}`,
-                    color: f.type === 'live' ? '#34C759' : '#007AFF',
-                    display: 'inline-flex', alignItems: 'center', gap: 4, userSelect: 'none',
-                    transition: 'all .15s',
-                  }}>
-                  <span style={{ width: 6, height: 6, borderRadius: 3, background: f.type === 'live' ? '#34C759' : '#007AFF', flexShrink: 0 }} />
-                  {f.label}
-                </span>
-                {hoveredBadge === i && (
-                  <div style={{
-                    position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)',
-                    background: '#1a1a2e', color: '#fff', fontSize: 11, padding: '6px 10px',
-                    borderRadius: 8, whiteSpace: 'nowrap', zIndex: 100, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    pointerEvents: 'none',
-                  }}>
-                    <span style={{ color: f.type === 'live' ? '#34C759' : '#007AFF', fontWeight: 700 }}>
-                      {f.type === 'live' ? 'Live Process' : 'Static Site'}
-                    </span>
-                    <br />
-                    {f.hint}
-                  </div>
-                )}
-              </div>
-            ))}
+            {SUPPORTED.map((f, i) => {
+              const c = TYPE_COLORS[f.type];
+              return (
+                <div key={f.label} style={{ position: 'relative' }}>
+                  <span
+                    onMouseEnter={() => setHoveredBadge(i)}
+                    onMouseLeave={() => setHoveredBadge(null)}
+                    style={{
+                      fontSize: 11, padding: '4px 9px', borderRadius: 20, cursor: 'default',
+                      background: c.bg, border: `1px solid ${c.border}`, color: c.text,
+                      display: 'inline-flex', alignItems: 'center', gap: 4, userSelect: 'none',
+                    }}>
+                    <span style={{ width: 5, height: 5, borderRadius: 3, background: c.dot, flexShrink: 0 }} />
+                    {f.label}
+                  </span>
+                  {hoveredBadge === i && (
+                    <div style={{
+                      position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)',
+                      background: '#14141F', color: '#fff', fontSize: 11, padding: '7px 11px',
+                      borderRadius: 9, whiteSpace: 'nowrap', zIndex: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                      border: '1px solid rgba(255,255,255,0.08)', pointerEvents: 'none', maxWidth: 280, whiteSpace: 'normal',
+                    }}>
+                      <span style={{ color: c.text, fontWeight: 700 }}>{c.label}</span>
+                      <div style={{ color: 'rgba(255,255,255,0.65)', marginTop: 3, lineHeight: 1.5 }}>{f.hint}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-tertiary)' }}>
-            <span><span style={{ color: '#34C759' }}>●</span> Green = Live process (has a running server)</span>
-            <span><span style={{ color: '#007AFF' }}>●</span> Blue = Static site (file serving)</span>
+          <div style={{ marginTop: 8, display: 'flex', gap: 14, fontSize: 11, color: 'var(--text-tertiary)', flexWrap: 'wrap' }}>
+            <span><span style={{ color: '#34C759' }}>●</span> Green = Live process (persistent server)</span>
+            <span><span style={{ color: '#007AFF' }}>●</span> Blue = Static site (instant file serving)</span>
+            <span><span style={{ color: '#5856D6' }}>●</span> Purple = Background worker (no web port)</span>
           </div>
         </div>
 
-        {/* Input tabs */}
+        {/* Deploy mode tabs */}
         <div style={{ display: 'flex', gap: 4, background: 'var(--bg)', borderRadius: 10, padding: 4, marginBottom: 16 }}>
           {(['zip', 'git'] as InputMode[]).map(t => (
             <button key={t} onClick={() => setInput(t)}
@@ -242,7 +273,7 @@ export default function Deploy() {
           {/* App name */}
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
-              App Name <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional — auto-detected)</span>
+              App Name <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional — auto-detected from package.json or directory)</span>
             </label>
             <input className="field" placeholder="my-discord-bot" value={name} onChange={e => setName(e.target.value)} />
           </div>
@@ -251,14 +282,14 @@ export default function Deploy() {
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Link size={12} /> Custom URL <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
+                <Link size={12} /> Custom URL slug <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
               </span>
             </label>
             <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg)', borderRadius: 9, border: '1.5px solid var(--border)', overflow: 'hidden' }}>
               <span style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', borderRight: '1px solid var(--border)' }}>/api/s/</span>
               <input
                 className="field"
-                placeholder="my-site (auto if blank)"
+                placeholder="my-app (auto-generated if blank)"
                 value={customSlug}
                 onChange={e => setCustomSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                 style={{ border: 'none', background: 'transparent', flex: 1, borderRadius: 0, paddingLeft: 8 }}
@@ -280,12 +311,12 @@ export default function Deploy() {
               {file ? (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{file.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{(file.size / 1024 / 1024).toFixed(2)} MB · Click to change</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{(file.size / 1024 / 1024).toFixed(2)} MB — click to change</div>
                 </>
               ) : (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Drop your ZIP here</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>or click to browse · Max 200MB · Works with any language</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>or click to browse — max 200 MB — any language works</div>
                 </>
               )}
             </div>
@@ -300,21 +331,31 @@ export default function Deploy() {
             <>
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Repository URL</label>
-                <input className="field" placeholder="https://github.com/user/my-repo.git" value={gitUrl} onChange={e => setGitUrl(e.target.value)} />
+                <input className="field" placeholder="https://github.com/user/my-repo" value={gitUrl} onChange={e => setGitUrl(e.target.value)} />
               </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Branch</label>
-                <input className="field" placeholder="main" value={gitBranch} onChange={e => setGitBranch(e.target.value)} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Branch</label>
+                  <input className="field" placeholder="main" value={gitBranch} onChange={e => setGitBranch(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                    Token <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(private repos)</span>
+                  </label>
+                  <input className="field" type="password" placeholder="ghp_xxxx" value={gitToken} onChange={e => setGitToken(e.target.value)} />
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                Public repos work as-is. Private repos: prepend your token — <code style={{ fontFamily: 'monospace' }}>https://TOKEN@github.com/user/repo</code>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8, lineHeight: 1.6 }}>
+                Public repos work with no token. For private repos, provide a GitHub PAT with read access.
+                Alternatively, embed the token: <code style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>https://TOKEN@github.com/user/repo</code>
               </div>
             </>
           )}
 
           {/* Env vars */}
           <button className="btn btn-secondary btn-sm" style={{ marginBottom: showEnv ? 0 : 14 }} onClick={() => setShowEnv(v => !v)}>
-            {showEnv ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Environment Variables {envVars.length > 0 ? `(${envVars.length})` : ''}
+            {showEnv ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            Environment Variables {envVars.length > 0 ? `(${envVars.length})` : ''}
           </button>
           {showEnv && <EnvEditor vars={envVars} onChange={setEnvVars} />}
 
@@ -326,7 +367,7 @@ export default function Deploy() {
             disabled={deploying || (input === 'zip' ? !file : !gitUrl)}
           >
             {deploying
-              ? <><Loader2 size={15} className="spin" /> Deploying — auto-detecting stack...</>
+              ? <><Loader2 size={15} className="spin" /> Deploying — detecting stack...</>
               : <><Rocket size={15} /> Deploy</>}
           </button>
         </div>
@@ -340,7 +381,7 @@ export default function Deploy() {
               {deploying && <Loader2 size={13} className="spin" color="#007AFF" style={{ marginLeft: 'auto' }} />}
               {jobId && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: deploying ? 0 : 'auto', fontFamily: 'monospace' }}>job: {jobId.slice(-12)}</span>}
             </div>
-            <div ref={logRef} style={{ background: '#0A0A0F', borderRadius: '0 0 12px 12px', padding: '10px 14px', maxHeight: 360, overflowY: 'auto' }}>
+            <div ref={logRef} style={{ background: '#0A0A0F', borderRadius: '0 0 12px 12px', padding: '10px 14px', maxHeight: 400, overflowY: 'auto' }}>
               {logs.map((l, i) => <LogLine key={i} line={l} />)}
               {deploying && logs.length === 0 && <LogLine line="Waiting for worker..." />}
             </div>
@@ -366,13 +407,19 @@ export default function Deploy() {
             )}
             {result.ok && result.type === 'live-app' && (
               <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Live process running — auto-restarts on crash</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Live process — auto-restarts on crash</div>
+                <a href="/processes" style={{ fontSize: 12, color: '#007AFF' }}>View in Live Apps</a>
+              </div>
+            )}
+            {result.ok && result.type === 'worker' && (
+              <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Background worker running — no web URL (bots, queue workers, etc.)</div>
                 <a href="/processes" style={{ fontSize: 12, color: '#007AFF' }}>View in Live Apps</a>
               </div>
             )}
             {result.ok && result.type === 'static-site' && (
               <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Static site hosted — instant global delivery</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Static site — instant file serving</div>
                 <a href="/sites" style={{ fontSize: 12, color: '#007AFF' }}>View in My Hosted Sites</a>
               </div>
             )}
@@ -380,27 +427,28 @@ export default function Deploy() {
               <div>
                 <div style={{ fontSize: 13, color: '#FF3B30', marginTop: 4 }}>{result.error}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>
-                  Tip: Ask the <a href="/ai" style={{ color: '#5856D6' }}>AI Assistant</a> to diagnose this error automatically
+                  Check the deploy log above for details. Common causes: missing requirements.txt, wrong branch name, or a build script error.
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Keep-alive */}
+        {/* Keep-alive info */}
         <div className="card card-inner" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Zap size={15} color="#FF9500" />
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Keep Your Server Alive 24/7</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10 }}>
-            Add this URL to <a href="https://uptimerobot.com" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>UptimeRobot</a> or <a href="https://cron-job.org" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>cron-job.org</a> for guaranteed uptime:
+            Add this ping URL to <a href="https://uptimerobot.com" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>UptimeRobot</a> or <a href="https://cron-job.org" target="_blank" rel="noreferrer" style={{ color: '#007AFF' }}>cron-job.org</a> (every 5 min):
           </div>
           <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <code style={{ fontSize: 12, flex: 1, wordBreak: 'break-all', color: 'var(--text-primary)' }}>{pingUrl}</code>
             <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard?.writeText(pingUrl)}>Copy</button>
           </div>
         </div>
+
       </div>
     </Shell>
   );

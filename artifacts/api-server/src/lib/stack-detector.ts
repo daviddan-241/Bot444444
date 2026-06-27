@@ -18,19 +18,17 @@ export interface StackInfo {
   appKind: "web" | "worker" | "static";
 }
 
-async function fileExists(p: string): Promise<boolean> {
+async function exists(p: string): Promise<boolean> {
   try { await access(p); return true; } catch { return false; }
 }
-
 async function readText(p: string): Promise<string> {
   try { return await readFile(p, "utf8"); } catch { return ""; }
 }
-
 async function readJson(p: string): Promise<any> {
   try { return JSON.parse(await readFile(p, "utf8")); } catch { return null; }
 }
 
-/** Parse a Procfile into a map of process type -> command */
+/** Parse a Procfile into process type → command map */
 async function parseProcfile(dir: string): Promise<Record<string, string> | null> {
   const content = await readText(path.join(dir, "Procfile"));
   if (!content) return null;
@@ -42,16 +40,13 @@ async function parseProcfile(dir: string): Promise<Record<string, string> | null
   return Object.keys(result).length > 0 ? result : null;
 }
 
-/** Detect Node.js package manager from root-level lockfiles */
+/** Detect Node.js package manager from lockfiles */
 export function detectPackageManager(files: string[]): "npm" | "pnpm" | "yarn" | "bun" {
-  if (files.includes("bun.lockb") || files.includes("bun.lock")) return "bun";
-  if (files.includes("pnpm-lock.yaml") || files.includes("pnpm-workspace.yaml")) return "pnpm";
-  if (files.includes("yarn.lock")) return "yarn";
+  const set = new Set(files.map(f => f.toLowerCase()));
+  if (set.has("bun.lockb") || set.has("bun.lock")) return "bun";
+  if (set.has("pnpm-lock.yaml") || set.has("pnpm-workspace.yaml")) return "pnpm";
+  if (set.has("yarn.lock")) return "yarn";
   return "npm";
-}
-
-function pmRun(pm: "npm" | "pnpm" | "yarn" | "bun", script: string): string {
-  return `${pm === "npm" ? "npm" : pm} run ${script}`;
 }
 
 function pmInstall(pm: "npm" | "pnpm" | "yarn" | "bun"): string {
@@ -63,41 +58,45 @@ function pmInstall(pm: "npm" | "pnpm" | "yarn" | "bun"): string {
   }
 }
 
-/** Detect Python sub-framework from requirements.txt / pyproject.toml contents */
-function detectPythonFramework(req: string, pyproject: string, files: string[]): {
+/** Determine Python sub-framework from file contents */
+function detectPythonFramework(combined: string, files: string[]): {
   framework: string; startCmd: string; port: number; appKind: "web" | "worker";
 } {
-  const has = (s: string) => req.toLowerCase().includes(s.toLowerCase()) || pyproject.toLowerCase().includes(s.toLowerCase());
-  const hasFile = (f: string) => files.includes(f);
+  const low = combined.toLowerCase();
+  const has = (s: string) => low.includes(s.toLowerCase());
+  const hasFile = (f: string) => files.some(x => x.toLowerCase() === f.toLowerCase());
 
-  // ASGI frameworks
-  if (has("fastapi") || has("uvicorn")) {
-    const module = hasFile("main.py") ? "main" : hasFile("app.py") ? "app" : hasFile("server.py") ? "server" : "app";
-    const appVar = "app";
-    return { framework: "fastapi", startCmd: `uvicorn ${module}:${appVar} --host 0.0.0.0 --port $PORT`, port: 8000, appKind: "web" };
+  // ASGI / fast async
+  if (has("fastapi") || (has("uvicorn") && !has("gunicorn"))) {
+    const mod = ["main", "app", "server", "api"].find(m => hasFile(`${m}.py`)) ?? "app";
+    return { framework: "fastapi", startCmd: `uvicorn ${mod}:app --host 0.0.0.0 --port $PORT`, port: 8000, appKind: "web" };
   }
   if (has("starlette")) {
-    return { framework: "starlette", startCmd: "uvicorn app:app --host 0.0.0.0 --port $PORT", port: 8000, appKind: "web" };
+    const mod = ["main", "app", "server"].find(m => hasFile(`${m}.py`)) ?? "app";
+    return { framework: "starlette", startCmd: `uvicorn ${mod}:app --host 0.0.0.0 --port $PORT`, port: 8000, appKind: "web" };
   }
   if (has("litestar")) {
     return { framework: "litestar", startCmd: "litestar run --host 0.0.0.0 --port $PORT", port: 8000, appKind: "web" };
   }
   if (has("sanic")) {
-    return { framework: "sanic", startCmd: "python server.py", port: 8000, appKind: "web" };
+    const mod = ["server", "app", "main"].find(m => hasFile(`${m}.py`)) ?? "server";
+    return { framework: "sanic", startCmd: `python ${mod}.py`, port: 8000, appKind: "web" };
   }
   if (has("aiohttp")) {
     return { framework: "aiohttp", startCmd: "python server.py", port: 8080, appKind: "web" };
   }
   if (has("tornado")) {
-    return { framework: "tornado", startCmd: "python server.py", port: 8888, appKind: "web" };
+    const mod = ["server", "app", "main"].find(m => hasFile(`${m}.py`)) ?? "server";
+    return { framework: "tornado", startCmd: `python ${mod}.py`, port: 8888, appKind: "web" };
   }
 
-  // WSGI frameworks
+  // WSGI
   if (has("django")) {
     return { framework: "django", startCmd: "python manage.py runserver 0.0.0.0:$PORT", port: 8000, appKind: "web" };
   }
   if (has("flask")) {
-    return { framework: "flask", startCmd: "python app.py", port: 5000, appKind: "web" };
+    const mod = ["app", "main", "server", "run"].find(m => hasFile(`${m}.py`)) ?? "app";
+    return { framework: "flask", startCmd: `python ${mod}.py`, port: 5000, appKind: "web" };
   }
   if (has("bottle")) {
     return { framework: "bottle", startCmd: "python app.py", port: 8080, appKind: "web" };
@@ -106,46 +105,52 @@ function detectPythonFramework(req: string, pyproject: string, files: string[]):
     return { framework: "falcon", startCmd: "gunicorn app:app --bind 0.0.0.0:$PORT", port: 8000, appKind: "web" };
   }
 
-  // Data / ML tools
+  // Data / ML
   if (has("streamlit")) {
-    return { framework: "streamlit", startCmd: "streamlit run app.py --server.port=$PORT --server.address=0.0.0.0", port: 8501, appKind: "web" };
+    const mod = ["app", "main", "streamlit_app"].find(m => hasFile(`${m}.py`)) ?? "app";
+    return { framework: "streamlit", startCmd: `streamlit run ${mod}.py --server.port $PORT --server.address 0.0.0.0`, port: 8501, appKind: "web" };
   }
   if (has("gradio")) {
-    return { framework: "gradio", startCmd: "python app.py", port: 7860, appKind: "web" };
+    const mod = ["app", "main"].find(m => hasFile(`${m}.py`)) ?? "app";
+    return { framework: "gradio", startCmd: `python ${mod}.py`, port: 7860, appKind: "web" };
   }
   if (has("dash")) {
-    return { framework: "dash", startCmd: "python app.py", port: 8050, appKind: "web" };
+    const mod = ["app", "main"].find(m => hasFile(`${m}.py`)) ?? "app";
+    return { framework: "dash", startCmd: `python ${mod}.py`, port: 8050, appKind: "web" };
   }
 
   // Bots
-  if (has("discord.py") || has("discord-py") || has("nextcord") || has("py-cord") || has("disnake") || has("hikari")) {
-    return { framework: "discord-bot", startCmd: hasFile("main.py") ? "python main.py" : "python bot.py", port: 0, appKind: "worker" };
+  if (has("discord.py") || has("nextcord") || has("py-cord") || has("disnake") || has("hikari") || has("interactions.py")) {
+    const mod = ["main", "bot", "index"].find(m => hasFile(`${m}.py`)) ?? "main";
+    return { framework: "discord-bot", startCmd: `python ${mod}.py`, port: 0, appKind: "worker" };
   }
-  if (has("python-telegram-bot") || has("aiogram") || has("pyrogram") || has("telethon")) {
-    return { framework: "telegram-bot", startCmd: hasFile("main.py") ? "python main.py" : "python bot.py", port: 0, appKind: "worker" };
+  if (has("python-telegram-bot") || has("aiogram") || has("pyrogram") || has("telethon") || has("pytelegrambotapi")) {
+    const mod = ["main", "bot"].find(m => hasFile(`${m}.py`)) ?? "bot";
+    return { framework: "telegram-bot", startCmd: `python ${mod}.py`, port: 0, appKind: "worker" };
   }
-  if (has("tweepy") || has("twitter")) {
+  if (has("tweepy")) {
     return { framework: "twitter-bot", startCmd: "python bot.py", port: 0, appKind: "worker" };
   }
 
-  // Generic Python script
-  const entry = ["main.py", "app.py", "server.py", "bot.py", "run.py", "index.py"].find(f => files.includes(f)) ?? "app.py";
+  // Generic Python script — find best entry point
+  const entry = ["main.py", "app.py", "server.py", "bot.py", "run.py", "start.py", "index.py"]
+    .find(f => hasFile(f)) ?? "main.py";
   return { framework: "python", startCmd: `python ${entry}`, port: 8000, appKind: "web" };
 }
 
-/** Detect Node.js framework from package.json deps */
+/** Detect Node.js framework from package.json */
 function detectNodeFramework(deps: Record<string, string>, scripts: Record<string, string>, files: string[]): {
-  framework: string; buildCmd: string | null; startCmd: string; port: number;
-  outputDir: string | null; appKind: "web" | "worker" | "static";
+  framework: string; buildCmd: string | null; startCmd: string;
+  port: number; outputDir: string | null; appKind: "web" | "worker" | "static";
 } {
-  const has = (pkg: string) => deps[pkg] !== undefined;
+  const has = (p: string) => p in deps;
+  const hasFile = (f: string) => files.some(x => x.toLowerCase() === f.toLowerCase());
 
-  // ── Bots & background workers ──────────────────────────────────────────────
+  // Bots / background workers — check BEFORE web frameworks
   if (has("discord.js") || has("@discordjs/rest") || has("discord-api-types") || has("eris") || has("oceanic.js") || has("discordeno")) {
-    const startCmd = scripts.start ? "npm run start" : files.includes("dist/index.js") ? "node dist/index.js" : "node index.js";
-    return { framework: "discord-bot", buildCmd: scripts.build ? "npm run build" : null, startCmd, port: 0, outputDir: null, appKind: "worker" };
+    return { framework: "discord-bot", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : hasFile("dist/index.js") ? "node dist/index.js" : "node index.js", port: 0, outputDir: null, appKind: "worker" };
   }
-  if (has("telegraf") || has("node-telegram-bot-api") || has("grammy") || has("telebot") || has("telegramsjs")) {
+  if (has("telegraf") || has("node-telegram-bot-api") || has("grammy") || has("telebot") || has("@grammyjs/runner")) {
     return { framework: "telegram-bot", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : "node index.js", port: 0, outputDir: null, appKind: "worker" };
   }
   if (has("twitter-api-v2") || has("twit") || has("twitter-lite")) {
@@ -157,13 +162,8 @@ function detectNodeFramework(deps: Record<string, string>, scripts: Record<strin
   if (has("tmi.js") || has("@twurple/api") || has("twitch.js")) {
     return { framework: "twitch-bot", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : "node bot.js", port: 0, outputDir: null, appKind: "worker" };
   }
-  if (has("bull") || has("bullmq") || has("bee-queue") || has("agenda") || has("node-cron")) {
-    if (!has("express") && !has("fastify") && !has("koa") && !has("hapi") && !has("@hapi/hapi")) {
-      return { framework: "node-worker", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : "node worker.js", port: 0, outputDir: null, appKind: "worker" };
-    }
-  }
 
-  // ── SSR / Fullstack frameworks ─────────────────────────────────────────────
+  // SSR / fullstack
   if (has("next")) {
     return { framework: "nextjs", buildCmd: "npm run build", startCmd: "npm run start", port: 3000, outputDir: ".next", appKind: "web" };
   }
@@ -176,28 +176,31 @@ function detectNodeFramework(deps: Record<string, string>, scripts: Record<strin
   if (has("@nestjs/core")) {
     return { framework: "nestjs", buildCmd: "npm run build", startCmd: scripts["start:prod"] ? "npm run start:prod" : "node dist/main.js", port: 3000, outputDir: "dist", appKind: "web" };
   }
-  if (has("remix") || has("@remix-run/node")) {
+  if (has("remix") || has("@remix-run/node") || has("@remix-run/express")) {
     return { framework: "remix", buildCmd: "npm run build", startCmd: "npm run start", port: 3000, outputDir: "build", appKind: "web" };
   }
 
-  // ── Static / SPA frameworks ───────────────────────────────────────────────
-  if (has("vite") && has("react")) {
-    return { framework: "react-vite", buildCmd: "npm run build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
+  // Static / SPA
+  if (has("vite") && (has("react") || has("@vitejs/plugin-react"))) {
+    return { framework: "react-vite", buildCmd: scripts.build ? "npm run build" : "npx vite build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
   }
-  if (has("vite") && has("vue")) {
-    return { framework: "vue", buildCmd: "npm run build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
+  if (has("vite") && (has("vue") || has("@vitejs/plugin-vue"))) {
+    return { framework: "vue-vite", buildCmd: scripts.build ? "npm run build" : "npx vite build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
   }
-  if (has("vite") && has("svelte")) {
-    return { framework: "svelte-vite", buildCmd: "npm run build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
+  if (has("vite") && (has("svelte") || has("@sveltejs/vite-plugin-svelte"))) {
+    return { framework: "svelte-vite", buildCmd: scripts.build ? "npm run build" : "npx vite build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
   }
   if (has("vite")) {
-    return { framework: "vite", buildCmd: "npm run build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
+    return { framework: "vite", buildCmd: scripts.build ? "npm run build" : "npx vite build", startCmd: "npx serve dist -l $PORT", port: 3000, outputDir: "dist", appKind: "static" };
   }
   if (has("react-scripts")) {
     return { framework: "create-react-app", buildCmd: "npm run build", startCmd: "npx serve build -l $PORT", port: 3000, outputDir: "build", appKind: "static" };
   }
-  if (has("@sveltejs/kit") || has("svelte")) {
-    return { framework: "svelte", buildCmd: "npm run build", startCmd: "npm run preview", port: 3000, outputDir: "build", appKind: "static" };
+  if (has("@sveltejs/kit")) {
+    return { framework: "sveltekit", buildCmd: "npm run build", startCmd: "npm run preview", port: 3000, outputDir: "build", appKind: "web" };
+  }
+  if (has("svelte")) {
+    return { framework: "svelte", buildCmd: "npm run build", startCmd: "npx serve public -l $PORT", port: 3000, outputDir: "public", appKind: "static" };
   }
   if (has("gatsby")) {
     return { framework: "gatsby", buildCmd: "npm run build", startCmd: "npx serve public -l $PORT", port: 3000, outputDir: "public", appKind: "static" };
@@ -208,17 +211,15 @@ function detectNodeFramework(deps: Record<string, string>, scripts: Record<strin
   if (has("@11ty/eleventy")) {
     return { framework: "eleventy", buildCmd: "npm run build", startCmd: "npx serve _site -l $PORT", port: 3000, outputDir: "_site", appKind: "static" };
   }
-  if (has("hexo")) {
-    return { framework: "hexo", buildCmd: "npx hexo generate", startCmd: "npx serve public -l $PORT", port: 3000, outputDir: "public", appKind: "static" };
-  }
 
-  // ── HTTP servers ──────────────────────────────────────────────────────────
+  // HTTP servers
   if (has("express")) {
-    const entry = ["dist/index.js", "dist/server.js", "dist/app.js", "server.js", "index.js", "app.js"].find(f => files.includes(f)) ?? "index.js";
+    const entry = ["dist/index.js", "dist/server.js", "dist/app.js", "server.js", "index.js", "app.js"].find(f => hasFile(f)) ?? "index.js";
     return { framework: "express", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : `node ${entry}`, port: 3000, outputDir: null, appKind: "web" };
   }
   if (has("fastify")) {
-    return { framework: "fastify", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : "node server.js", port: 3000, outputDir: null, appKind: "web" };
+    const entry = ["server.js", "index.js", "app.js"].find(f => hasFile(f)) ?? "server.js";
+    return { framework: "fastify", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : `node ${entry}`, port: 3000, outputDir: null, appKind: "web" };
   }
   if (has("@hapi/hapi") || has("hapi")) {
     return { framework: "hapi", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : "node server.js", port: 3000, outputDir: null, appKind: "web" };
@@ -226,12 +227,10 @@ function detectNodeFramework(deps: Record<string, string>, scripts: Record<strin
   if (has("koa")) {
     return { framework: "koa", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : "node app.js", port: 3000, outputDir: null, appKind: "web" };
   }
-  if (has("@trpc/server")) {
-    return { framework: "trpc", buildCmd: scripts.build ? "npm run build" : null, startCmd: scripts.start ? "npm run start" : "node server.js", port: 3000, outputDir: null, appKind: "web" };
-  }
 
   // Generic Node.js
-  const entry = ["dist/index.js", "dist/server.js", "server.js", "index.js", "app.js", "main.js"].find(f => files.includes(f)) ?? "index.js";
+  const entry = ["dist/index.js", "dist/server.js", "dist/app.js", "server.js", "index.js", "app.js", "main.js"]
+    .find(f => hasFile(f)) ?? "index.js";
   return {
     framework: "node",
     buildCmd: scripts.build ? "npm run build" : null,
@@ -241,337 +240,231 @@ function detectNodeFramework(deps: Record<string, string>, scripts: Record<strin
 }
 
 /**
- * Fully detect the language, framework, install/build/start commands
- * for a project at the given directory. Checks:
- *   - Procfile (highest priority for start cmd)
- *   - Dockerfile
- *   - package.json (Node.js)
- *   - requirements.txt / pyproject.toml / Pipfile (Python)
- *   - Gemfile (Ruby)
- *   - composer.json (PHP)
- *   - go.mod (Go)
- *   - Cargo.toml (Rust)
- *   - pom.xml / build.gradle (Java)
- *   - deno.json (Deno)
- *   - index.html (Static)
+ * Determine whether a Python project should take priority over Node.js.
+ * Used when BOTH package.json AND requirements.txt/pyproject.toml exist.
+ * Python wins when there are Python entry-point files (app.py, main.py etc.)
+ * OR when the package.json has workspace: deps (it's just a monorepo tool config).
+ */
+function pythonHasPriority(files: string[], pkgRaw: string): boolean {
+  const set = new Set(files.map(f => f.toLowerCase()));
+  // Direct Python entry points
+  if (set.has("manage.py")) return true; // Django is unmistakable
+  if (set.has("app.py") || set.has("main.py") || set.has("server.py") || set.has("bot.py")) return true;
+  // package.json has workspace: deps → it's a monorepo helper, not the real runtime
+  if (pkgRaw.includes('"workspace:')) return true;
+  return false;
+}
+
+/**
+ * Fully auto-detect the stack for a project directory.
+ *
+ * Priority order (matches Render.com + Vercel convention):
+ *   1. Procfile (overrides start commands)
+ *   2. Dockerfile
+ *   3. Python  — checked BEFORE Node when Python entry points exist
+ *   4. Node.js
+ *   5. Ruby   6. PHP   7. Go   8. Rust   9. Java (Maven/Gradle)
+ *  10. Deno  11. Bun  12. Static HTML
+ *  13. Unknown fallback
  */
 export async function detectStack(dir: string): Promise<StackInfo> {
   const rawFiles = await readdir(dir).catch(() => [] as string[]);
-  const files = rawFiles.map(f => f.toLowerCase().trim());
-  const rawFilesLower = new Set(files);
-  const has = (f: string) => rawFilesLower.has(f.toLowerCase());
+  const lset = new Set(rawFiles.map(f => f.toLowerCase()));
+  const hasFile = (f: string) => lset.has(f.toLowerCase());
   const detected: string[] = [];
 
-  // Parse Procfile first — it overrides start commands
+  // 1. Procfile
   const procfile = await parseProcfile(dir);
   if (procfile) detected.push(`Procfile (${Object.keys(procfile).join(", ")})`);
 
-  // ── Dockerfile ────────────────────────────────────────────────────────────
-  if (has("Dockerfile") || has("dockerfile")) {
+  // 2. Dockerfile
+  if (hasFile("Dockerfile") || hasFile("dockerfile")) {
     detected.push("Dockerfile");
+    return { language: "docker", framework: "docker", runtime: "docker", packageManager: "none", installCmd: null, buildCmd: null, startCmd: procfile?.web ?? "docker run -p $PORT:$PORT app", port: 3000, outputDir: null, dockerfile: true, procfile, detected, confidence: "high", appKind: "web" };
+  }
+
+  // ── Decide between Python and Node when both exist ──────────────────────
+  const hasPythonFiles = hasFile("requirements.txt") || hasFile("pyproject.toml") || hasFile("setup.py") || hasFile("setup.cfg") || hasFile("pipfile") || hasFile("uv.lock");
+  const hasNodeFiles   = hasFile("package.json");
+  const pkgRaw         = hasNodeFiles ? await readText(path.join(dir, "package.json")) : "";
+
+  const preferPython = hasPythonFiles && (!hasNodeFiles || pythonHasPriority(rawFiles, pkgRaw));
+
+  // 3. Python (may win over Node)
+  if (preferPython) {
+    detected.push("Python project");
+    const req      = await readText(path.join(dir, "requirements.txt"));
+    const pyproj   = await readText(path.join(dir, "pyproject.toml"));
+    const pipfileC = await readText(path.join(dir, "Pipfile"));
+    const combined = req + "\n" + pyproj + "\n" + pipfileC;
+
+    let pm = "pip";
+    let installCmd: string | null;
+
+    if (hasFile("uv.lock") || pyproj.includes("[tool.uv]")) {
+      pm = "uv";
+      installCmd = hasFile("requirements.txt") ? "uv pip install -r requirements.txt --system" : "uv pip install -e . --system";
+      detected.push("uv");
+    } else if (hasFile("pipfile")) {
+      pm = "pipenv";
+      installCmd = "pipenv install --deploy --system";
+      detected.push("Pipfile (pipenv)");
+    } else if (pyproj.includes("[tool.poetry]")) {
+      pm = "poetry";
+      installCmd = "poetry install --no-interaction --no-ansi";
+      detected.push("pyproject.toml (poetry)");
+    } else if (hasFile("requirements.txt")) {
+      pm = "pip";
+      installCmd = "pip install -r requirements.txt --no-cache-dir";
+      detected.push("requirements.txt");
+    } else {
+      pm = "pip";
+      installCmd = "pip install -e . --no-cache-dir";
+      detected.push("pyproject.toml (pip)");
+    }
+
+    const py = detectPythonFramework(combined, rawFiles);
+    detected.push(`framework: ${py.framework}`);
+
     return {
-      language: "docker", framework: "docker", runtime: "docker", packageManager: "none",
-      installCmd: null, buildCmd: null,
-      startCmd: procfile?.web ?? "docker run -p $PORT:$PORT app",
-      port: 3000, outputDir: null, dockerfile: true, procfile, detected,
-      confidence: "high", appKind: "web",
+      language: "python", framework: py.framework, runtime: "python3", packageManager: pm,
+      installCmd, buildCmd: null,
+      startCmd: procfile?.web ?? py.startCmd,
+      port: py.port, outputDir: null, dockerfile: false,
+      procfile, detected, confidence: "high", appKind: py.appKind,
     };
   }
 
-  // ── Node.js ──────────────────────────────────────────────────────────────
-  if (has("package.json")) {
+  // 4. Node.js
+  if (hasNodeFiles) {
     detected.push("package.json");
-    const pkg = await readJson(path.join(dir, "package.json"));
+    const pkg  = JSON.parse(pkgRaw || "{}");
     const deps: Record<string, string> = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}), ...(pkg?.peerDependencies ?? {}) };
     const scripts: Record<string, string> = pkg?.scripts ?? {};
     const pm = detectPackageManager(rawFiles);
     detected.push(`package-manager: ${pm}`);
 
-    // Detect TypeScript — might need ts-node or tsc
-    const isTS = has("tsconfig.json") || Object.keys(deps).includes("typescript");
-    if (isTS) detected.push("TypeScript");
+    if (hasFile("tsconfig.json") || "typescript" in deps) detected.push("TypeScript");
 
     const node = detectNodeFramework(deps, scripts, rawFiles);
     detected.push(`framework: ${node.framework}`);
 
-    // If Procfile web: override start
-    const startCmd = procfile?.web ?? node.startCmd;
-
-    // Adjust pm-specific commands
-    const installCmd = pmInstall(pm);
-    const buildCmd = node.buildCmd ? node.buildCmd.replace("npm run", pmRun(pm, "").replace(" ", "npm run ").replace("npm run ", `${pm === "npm" ? "npm" : pm} run `)) : null;
-    // Simpler: just replace npm with the right pm in build
-    const finalBuild = node.buildCmd
-      ? node.buildCmd.replace(/^npm /, `${pm === "npm" ? "npm" : pm} `)
-      : null;
+    const finalBuild = node.buildCmd ? node.buildCmd.replace(/^npm /, `${pm} `) : null;
 
     return {
-      language: isTS ? "typescript" : "javascript",
-      framework: node.framework,
-      runtime: "node",
-      packageManager: pm,
-      installCmd,
+      language: "javascript", framework: node.framework, runtime: "node", packageManager: pm,
+      installCmd: pmInstall(pm),
       buildCmd: finalBuild,
-      startCmd,
-      port: node.port,
-      outputDir: node.outputDir,
-      dockerfile: false,
-      procfile,
-      detected,
-      confidence: "high",
-      appKind: node.appKind,
+      startCmd: procfile?.web ?? node.startCmd,
+      port: node.port, outputDir: node.outputDir, dockerfile: false,
+      procfile, detected, confidence: "high", appKind: node.appKind,
     };
   }
 
-  // ── Python ───────────────────────────────────────────────────────────────
-  if (has("requirements.txt") || has("pyproject.toml") || has("setup.py") || has("setup.cfg") || has("pipfile") || has("uv.lock")) {
+  // 5. Python (when no package.json at all)
+  if (hasPythonFiles) {
     detected.push("Python project");
-
-    const req       = await readText(path.join(dir, "requirements.txt"));
-    const pyproject = await readText(path.join(dir, "pyproject.toml"));
-    const pipfile   = await readText(path.join(dir, "Pipfile"));
-
-    // Detect Python package manager
+    const req      = await readText(path.join(dir, "requirements.txt"));
+    const pyproj   = await readText(path.join(dir, "pyproject.toml"));
+    const pipfileC = await readText(path.join(dir, "Pipfile"));
+    const combined = req + "\n" + pyproj + "\n" + pipfileC;
     let pm = "pip";
-    let installCmd: string;
-
-    if (has("uv.lock") || pyproject.includes("[tool.uv]")) {
-      pm = "uv";
-      installCmd = has("requirements.txt")
-        ? "uv pip install -r requirements.txt --system"
-        : "uv pip install -e . --system";
-      detected.push("uv");
-    } else if (has("pipfile")) {
-      pm = "pipenv";
-      installCmd = "pipenv install --deploy --system";
-      detected.push("Pipfile (pipenv)");
-    } else if (pyproject.includes("[tool.poetry]")) {
-      pm = "poetry";
-      installCmd = "poetry install --no-interaction --no-ansi";
-      detected.push("pyproject.toml (poetry)");
-    } else if (pyproject.includes("[build-system]") || pyproject.includes("[project]")) {
-      pm = "pip";
-      installCmd = has("requirements.txt")
-        ? "pip install -r requirements.txt --no-cache-dir"
-        : "pip install -e . --no-cache-dir";
-      detected.push("pyproject.toml (pip)");
+    let installCmd: string | null;
+    if (hasFile("uv.lock") || pyproj.includes("[tool.uv]")) {
+      pm = "uv"; installCmd = "uv pip install -r requirements.txt --system"; detected.push("uv");
+    } else if (hasFile("pipfile")) {
+      pm = "pipenv"; installCmd = "pipenv install --deploy --system"; detected.push("Pipfile");
+    } else if (pyproj.includes("[tool.poetry]")) {
+      pm = "poetry"; installCmd = "poetry install --no-interaction --no-ansi"; detected.push("pyproject.toml (poetry)");
     } else {
-      pm = "pip";
-      installCmd = has("requirements.txt")
-        ? "pip install -r requirements.txt --no-cache-dir"
-        : "pip install -e . --no-cache-dir || true";
-      detected.push("requirements.txt");
+      pm = "pip"; installCmd = hasFile("requirements.txt") ? "pip install -r requirements.txt --no-cache-dir" : "pip install -e . --no-cache-dir";
+      detected.push(hasFile("requirements.txt") ? "requirements.txt" : "pyproject.toml");
     }
-
-    const combined = req + "\n" + pyproject + "\n" + pipfile;
-    const py = detectPythonFramework(combined, pyproject, rawFiles);
+    const py = detectPythonFramework(combined, rawFiles);
     detected.push(`framework: ${py.framework}`);
-
-    const startCmd = procfile?.web ?? py.startCmd;
-
     return {
-      language: "python",
-      framework: py.framework,
-      runtime: "python3",
-      packageManager: pm,
-      installCmd,
-      buildCmd: null,
-      startCmd,
-      port: py.port,
-      outputDir: null,
-      dockerfile: false,
-      procfile,
-      detected,
-      confidence: "high",
-      appKind: py.appKind,
+      language: "python", framework: py.framework, runtime: "python3", packageManager: pm,
+      installCmd, buildCmd: null,
+      startCmd: procfile?.web ?? py.startCmd,
+      port: py.port, outputDir: null, dockerfile: false,
+      procfile, detected, confidence: "high", appKind: py.appKind,
     };
   }
 
-  // ── Ruby ──────────────────────────────────────────────────────────────────
-  if (has("gemfile")) {
+  // 6. Ruby
+  if (hasFile("Gemfile")) {
     detected.push("Gemfile (Ruby)");
-    const isRails = await fileExists(path.join(dir, "config", "application.rb"));
-    const isSinatra = (await readText(path.join(dir, "Gemfile"))).includes("sinatra");
-    let framework = "ruby";
-    let startCmd = "ruby app.rb";
-    let port = 4567;
-
-    if (isRails) {
-      framework = "rails";
-      startCmd = "bundle exec rails server -b 0.0.0.0 -p $PORT";
-      port = 3000;
-      detected.push("Rails");
-    } else if (isSinatra) {
-      framework = "sinatra";
-      startCmd = "bundle exec ruby app.rb -o 0.0.0.0 -p $PORT";
-      port = 4567;
-      detected.push("Sinatra");
-    } else {
-      const entry = ["app.rb", "server.rb", "main.rb", "bot.rb"].find(f => rawFiles.includes(f)) ?? "app.rb";
-      startCmd = `bundle exec ruby ${entry}`;
-      detected.push("Ruby script");
-    }
-
-    return {
-      language: "ruby", framework, runtime: "ruby", packageManager: "bundler",
-      installCmd: "bundle install",
-      buildCmd: isRails ? "bundle exec rails assets:precompile" : null,
-      startCmd: procfile?.web ?? startCmd,
-      port, outputDir: isRails ? "public" : null,
-      dockerfile: false, procfile, detected, confidence: "high",
-      appKind: "web",
-    };
+    const gemContent = await readText(path.join(dir, "Gemfile"));
+    const isRails   = await exists(path.join(dir, "config", "application.rb"));
+    const isSinatra = gemContent.includes("sinatra");
+    let framework = "ruby"; let startCmd = "ruby app.rb"; let port = 4567;
+    if (isRails) { framework = "rails"; startCmd = "bundle exec rails server -b 0.0.0.0 -p $PORT"; port = 3000; detected.push("Rails"); }
+    else if (isSinatra) { framework = "sinatra"; startCmd = "bundle exec ruby app.rb -o 0.0.0.0 -p $PORT"; port = 4567; detected.push("Sinatra"); }
+    else { const e = ["app.rb","server.rb","main.rb","bot.rb"].find(f => hasFile(f)) ?? "app.rb"; startCmd = `bundle exec ruby ${e}`; }
+    return { language: "ruby", framework, runtime: "ruby", packageManager: "bundler", installCmd: "bundle install", buildCmd: isRails ? "bundle exec rails assets:precompile" : null, startCmd: procfile?.web ?? startCmd, port, outputDir: null, dockerfile: false, procfile, detected, confidence: "high", appKind: "web" };
   }
 
-  // ── PHP ───────────────────────────────────────────────────────────────────
-  if (has("composer.json") || has("index.php")) {
+  // 7. PHP
+  if (hasFile("composer.json") || hasFile("index.php")) {
     detected.push("PHP project");
-    const hasComposer = has("composer.json");
-    const isLaravel = await fileExists(path.join(dir, "artisan"));
-    let framework = "php";
-    let startCmd = "php -S 0.0.0.0:$PORT";
-    let port = 8080;
-
-    if (isLaravel) {
-      framework = "laravel";
-      startCmd = "php artisan serve --host=0.0.0.0 --port=$PORT";
-      port = 8000;
-      detected.push("Laravel");
-    } else {
-      detected.push("PHP built-in server");
-    }
-
-    return {
-      language: "php", framework, runtime: "php", packageManager: "composer",
-      installCmd: hasComposer ? "composer install --no-dev --optimize-autoloader --no-interaction" : null,
-      buildCmd: isLaravel ? "php artisan config:cache && php artisan route:cache" : null,
-      startCmd: procfile?.web ?? startCmd,
-      port, outputDir: isLaravel ? "public" : null,
-      dockerfile: false, procfile, detected, confidence: "high",
-      appKind: "web",
-    };
+    const isLaravel = hasFile("artisan");
+    const framework = isLaravel ? "laravel" : "php";
+    const startCmd  = isLaravel ? "php artisan serve --host=0.0.0.0 --port=$PORT" : "php -S 0.0.0.0:$PORT";
+    const port      = isLaravel ? 8000 : 8080;
+    return { language: "php", framework, runtime: "php", packageManager: "composer", installCmd: hasFile("composer.json") ? "composer install --no-dev --optimize-autoloader --no-interaction" : null, buildCmd: isLaravel ? "php artisan config:cache && php artisan route:cache" : null, startCmd: procfile?.web ?? startCmd, port, outputDir: null, dockerfile: false, procfile, detected, confidence: "high", appKind: "web" };
   }
 
-  // ── Go ────────────────────────────────────────────────────────────────────
-  if (has("go.mod")) {
-    detected.push("Go module (go.mod)");
+  // 8. Go
+  if (hasFile("go.mod")) {
+    detected.push("go.mod (Go)");
     const goMod = await readText(path.join(dir, "go.mod"));
-    const moduleName = goMod.match(/^module\s+(\S+)/m)?.[1] ?? "app";
-    const binary = moduleName.split("/").pop() ?? "app";
-    return {
-      language: "go", framework: "go", runtime: "go", packageManager: "go",
-      installCmd: "go mod download",
-      buildCmd: `go build -o ${binary} .`,
-      startCmd: procfile?.web ?? `./${binary}`,
-      port: 8080, outputDir: null,
-      dockerfile: false, procfile, detected, confidence: "high",
-      appKind: "web",
-    };
+    const mod   = goMod.match(/^module\s+(\S+)/m)?.[1] ?? "app";
+    const bin   = mod.split("/").pop() ?? "app";
+    return { language: "go", framework: "go", runtime: "go", packageManager: "go", installCmd: "go mod download", buildCmd: `go build -o ${bin} .`, startCmd: procfile?.web ?? `./${bin}`, port: 8080, outputDir: null, dockerfile: false, procfile, detected, confidence: "high", appKind: "web" };
   }
 
-  // ── Rust ──────────────────────────────────────────────────────────────────
-  if (has("cargo.toml")) {
+  // 9. Rust
+  if (hasFile("Cargo.toml")) {
     detected.push("Cargo.toml (Rust)");
     const cargo = await readJson(path.join(dir, "Cargo.toml"));
-    const name = cargo?.package?.name ?? "app";
-    return {
-      language: "rust", framework: "rust", runtime: "cargo", packageManager: "cargo",
-      installCmd: null,
-      buildCmd: "cargo build --release",
-      startCmd: procfile?.web ?? `./target/release/${name}`,
-      port: 8080, outputDir: null,
-      dockerfile: false, procfile, detected, confidence: "high",
-      appKind: "web",
-    };
+    const name  = cargo?.package?.name ?? "app";
+    return { language: "rust", framework: "rust", runtime: "cargo", packageManager: "cargo", installCmd: null, buildCmd: "cargo build --release", startCmd: procfile?.web ?? `./target/release/${name}`, port: 8080, outputDir: null, dockerfile: false, procfile, detected, confidence: "high", appKind: "web" };
   }
 
-  // ── Java (Maven) ──────────────────────────────────────────────────────────
-  if (has("pom.xml")) {
+  // 10. Java (Maven)
+  if (hasFile("pom.xml")) {
     detected.push("pom.xml (Maven)");
-    const isSpring = (await readText(path.join(dir, "pom.xml"))).includes("spring");
-    return {
-      language: "java", framework: isSpring ? "spring" : "java", runtime: "java", packageManager: "maven",
-      installCmd: null,
-      buildCmd: "./mvnw package -DskipTests || mvn package -DskipTests",
-      startCmd: procfile?.web ?? "java -jar target/*.jar",
-      port: 8080, outputDir: "target",
-      dockerfile: false, procfile, detected, confidence: "high",
-      appKind: "web",
-    };
+    const pomContent = await readText(path.join(dir, "pom.xml"));
+    const isSpring   = pomContent.includes("spring");
+    const mvnCmd     = await exists(path.join(dir, "mvnw")) ? "./mvnw" : "mvn";
+    return { language: "java", framework: isSpring ? "spring-boot" : "maven", runtime: "java", packageManager: "maven", installCmd: null, buildCmd: `${mvnCmd} package -DskipTests`, startCmd: procfile?.web ?? "java -jar target/*.jar", port: 8080, outputDir: "target", dockerfile: false, procfile, detected, confidence: "high", appKind: "web" };
   }
 
-  // ── Java (Gradle) ────────────────────────────────────────────────────────
-  if (has("build.gradle") || has("build.gradle.kts")) {
-    detected.push(`${has("build.gradle.kts") ? "build.gradle.kts" : "build.gradle"} (Gradle)`);
-    return {
-      language: "java", framework: "gradle", runtime: "java", packageManager: "gradle",
-      installCmd: null,
-      buildCmd: "./gradlew build -x test || gradle build -x test",
-      startCmd: procfile?.web ?? "java -jar build/libs/*.jar",
-      port: 8080, outputDir: "build/libs",
-      dockerfile: false, procfile, detected, confidence: "high",
-      appKind: "web",
-    };
+  // 11. Java (Gradle)
+  if (hasFile("build.gradle") || hasFile("build.gradle.kts")) {
+    detected.push("build.gradle (Gradle)");
+    const gradleCmd = await exists(path.join(dir, "gradlew")) ? "./gradlew" : "gradle";
+    return { language: "java", framework: "gradle", runtime: "java", packageManager: "gradle", installCmd: null, buildCmd: `${gradleCmd} build -x test`, startCmd: procfile?.web ?? "java -jar build/libs/*.jar", port: 8080, outputDir: "build/libs", dockerfile: false, procfile, detected, confidence: "high", appKind: "web" };
   }
 
-  // ── Deno ─────────────────────────────────────────────────────────────────
-  if (has("deno.json") || has("deno.jsonc") || has("deps.ts")) {
+  // 12. Deno
+  if (hasFile("deno.json") || hasFile("deno.jsonc") || hasFile("deps.ts")) {
     detected.push("Deno project");
-    const denoJson = await readJson(path.join(dir, "deno.json")) ?? await readJson(path.join(dir, "deno.jsonc"));
+    const denoJson = await readJson(path.join(dir, "deno.json")) ?? await readJson(path.join(dir, "deno.jsonc")) ?? {};
     const tasks = denoJson?.tasks ?? {};
-    const entry = denoJson?.main ?? "main.ts";
-    const startCmd = tasks.start
-      ? "deno task start"
-      : `deno run --allow-all ${entry}`;
-    return {
-      language: "typescript", framework: "deno", runtime: "deno", packageManager: "none",
-      installCmd: null,
-      buildCmd: tasks.build ? "deno task build" : null,
-      startCmd: procfile?.web ?? startCmd,
-      port: 8000, outputDir: null,
-      dockerfile: false, procfile, detected, confidence: "high",
-      appKind: "web",
-    };
+    const entry = denoJson?.main ?? (hasFile("main.ts") ? "main.ts" : "mod.ts");
+    return { language: "typescript", framework: "deno", runtime: "deno", packageManager: "none", installCmd: null, buildCmd: tasks.build ? "deno task build" : null, startCmd: procfile?.web ?? (tasks.start ? "deno task start" : `deno run --allow-all ${entry}`), port: 8000, outputDir: null, dockerfile: false, procfile, detected, confidence: "high", appKind: "web" };
   }
 
-  // ── Bun (no package.json, has bunfig) ────────────────────────────────────
-  if (has("bunfig.toml")) {
-    detected.push("Bun project (bunfig.toml)");
-    return {
-      language: "javascript", framework: "bun", runtime: "bun", packageManager: "bun",
-      installCmd: "bun install",
-      buildCmd: null,
-      startCmd: procfile?.web ?? "bun run index.ts",
-      port: 3000, outputDir: null,
-      dockerfile: false, procfile, detected, confidence: "medium",
-      appKind: "web",
-    };
-  }
-
-  // ── Static HTML ───────────────────────────────────────────────────────────
-  if (has("index.html")) {
+  // 13. Static HTML
+  if (hasFile("index.html")) {
     detected.push("Static HTML");
-    return {
-      language: "html", framework: "static", runtime: "node", packageManager: "none",
-      installCmd: null,
-      buildCmd: null,
-      startCmd: "npx serve . -l $PORT",
-      port: 3000, outputDir: null,
-      dockerfile: false, procfile, detected, confidence: "medium",
-      appKind: "static",
-    };
+    return { language: "html", framework: "static", runtime: "node", packageManager: "none", installCmd: null, buildCmd: null, startCmd: "npx serve . -l $PORT", port: 3000, outputDir: null, dockerfile: false, procfile, detected, confidence: "medium", appKind: "static" };
   }
 
-  // ── Unknown fallback ──────────────────────────────────────────────────────
-  detected.push("Unknown — inspect directory manually");
-  return {
-    language: "unknown", framework: "unknown", runtime: "node", packageManager: "none",
-    installCmd: null, buildCmd: null,
-    startCmd: procfile?.web ?? "node index.js",
-    port: 3000, outputDir: null,
-    dockerfile: false, procfile, detected, confidence: "low",
-    appKind: "web",
-  };
+  // 14. Unknown
+  detected.push("Unknown — no recognizable project files found");
+  return { language: "unknown", framework: "unknown", runtime: "node", packageManager: "none", installCmd: null, buildCmd: null, startCmd: procfile?.web ?? "node index.js", port: 3000, outputDir: null, dockerfile: false, procfile, detected, confidence: "low", appKind: "web" };
 }
 
 /** Generate a Dockerfile for the detected stack */
@@ -580,106 +473,40 @@ export function generateDockerfile(stack: StackInfo): string {
     case "javascript":
     case "typescript": {
       const pm = stack.packageManager as "npm" | "pnpm" | "yarn" | "bun";
-      const pmSetup = pm === "pnpm" ? "RUN npm install -g pnpm" : pm === "bun" ? "RUN npm install -g bun" : "";
+      const base = pm === "bun" ? "oven/bun:1-alpine" : "node:20-alpine";
+      const pmSetup = pm === "pnpm" ? "RUN npm install -g pnpm" : pm === "bun" ? "" : "";
       const installLine = pmInstall(pm);
-      const baseImage = pm === "bun" ? "oven/bun:1-alpine" : "node:20-alpine";
       return [
-        `FROM ${baseImage}`,
-        "WORKDIR /app",
-        pmSetup,
+        `FROM ${base}`, "WORKDIR /app", pmSetup,
         "COPY package*.json ./",
         pm === "pnpm" ? "COPY pnpm-lock.yaml* ./" : pm === "yarn" ? "COPY yarn.lock* ./" : "",
-        `RUN ${installLine}`,
-        "COPY . .",
+        `RUN ${installLine}`, "COPY . .",
         stack.buildCmd ? `RUN ${stack.buildCmd}` : "",
-        `EXPOSE ${stack.port}`,
-        `ENV PORT=${stack.port}`,
+        `EXPOSE ${stack.port}`, `ENV PORT=${stack.port}`,
         `CMD ${JSON.stringify(["sh", "-c", stack.startCmd])}`,
       ].filter(Boolean).join("\n");
     }
     case "python": {
-      const baseImage = "python:3.12-slim";
-      const installLine = stack.installCmd ?? "pip install -r requirements.txt --no-cache-dir";
+      const reqLine = stack.installCmd ? `RUN ${stack.installCmd}` : "";
       return [
-        `FROM ${baseImage}`,
-        "WORKDIR /app",
-        "COPY requirements*.txt pyproject.toml* ./",
-        `RUN ${installLine}`,
-        "COPY . .",
-        `EXPOSE ${stack.port}`,
-        `ENV PORT=${stack.port}`,
+        "FROM python:3.12-slim", "WORKDIR /app",
+        "COPY requirements*.txt pyproject.toml* Pipfile* ./",
+        reqLine, "COPY . .",
+        `EXPOSE ${stack.port}`, `ENV PORT=${stack.port}`,
         `CMD ["sh", "-c", "${stack.startCmd.replace(/"/g, '\\"')}"]`,
       ].filter(Boolean).join("\n");
     }
-    case "ruby": {
-      return [
-        "FROM ruby:3.3-slim",
-        "WORKDIR /app",
-        "COPY Gemfile* ./",
-        "RUN bundle install",
-        "COPY . .",
-        `EXPOSE ${stack.port}`,
-        `ENV PORT=${stack.port}`,
-        `CMD ["sh", "-c", "${stack.startCmd.replace(/"/g, '\\"')}"]`,
-      ].join("\n");
-    }
-    case "go": {
-      return [
-        "FROM golang:1.22-alpine AS build",
-        "WORKDIR /app",
-        "COPY go.mod go.sum* ./",
-        "RUN go mod download",
-        "COPY . .",
-        `RUN ${stack.buildCmd ?? "go build -o app ."}`,
-        "FROM alpine:latest",
-        "WORKDIR /app",
-        `COPY --from=build /app/${stack.startCmd.replace("./", "")} .`,
-        `EXPOSE ${stack.port}`,
-        `ENV PORT=${stack.port}`,
-        `CMD ["./${stack.startCmd.replace("./", "")}"]`,
-      ].join("\n");
-    }
-    case "rust": {
-      return [
-        "FROM rust:1.78 AS build",
-        "WORKDIR /app",
-        "COPY . .",
-        "RUN cargo build --release",
-        "FROM debian:bookworm-slim",
-        "WORKDIR /app",
-        `COPY --from=build /app/target/release/${stack.framework} .`,
-        `EXPOSE ${stack.port}`,
-        `ENV PORT=${stack.port}`,
-        `CMD ["./${stack.framework}"]`,
-      ].join("\n");
-    }
-    case "php": {
-      return [
-        "FROM php:8.3-cli",
-        "WORKDIR /app",
-        stack.installCmd ? "COPY composer* ./" : "",
-        stack.installCmd ? `RUN ${stack.installCmd}` : "",
-        "COPY . .",
-        `EXPOSE ${stack.port}`,
-        `ENV PORT=${stack.port}`,
-        `CMD ["php", "-S", "0.0.0.0:${stack.port}"]`,
-      ].filter(Boolean).join("\n");
-    }
-    case "java": {
-      return [
-        "FROM eclipse-temurin:21-jdk AS build",
-        "WORKDIR /app",
-        "COPY . .",
-        `RUN ${stack.buildCmd ?? "mvn package -DskipTests"}`,
-        "FROM eclipse-temurin:21-jre",
-        "WORKDIR /app",
-        "COPY --from=build /app/target/*.jar app.jar",
-        `EXPOSE ${stack.port}`,
-        `ENV PORT=${stack.port}`,
-        'CMD ["java", "-jar", "app.jar"]',
-      ].join("\n");
-    }
+    case "ruby":
+      return `FROM ruby:3.3-slim\nWORKDIR /app\nCOPY Gemfile* ./\nRUN bundle install\nCOPY . .\nEXPOSE ${stack.port}\nENV PORT=${stack.port}\nCMD ["sh","-c","${stack.startCmd}"]`;
+    case "go":
+      return `FROM golang:1.22-alpine AS build\nWORKDIR /app\nCOPY go.mod go.sum* ./\nRUN go mod download\nCOPY . .\nRUN ${stack.buildCmd ?? "go build -o app ."}\nFROM alpine:latest\nWORKDIR /app\nCOPY --from=build /app/app .\nEXPOSE ${stack.port}\nENV PORT=${stack.port}\nCMD ["./app"]`;
+    case "rust":
+      return `FROM rust:1.78 AS build\nWORKDIR /app\nCOPY . .\nRUN cargo build --release\nFROM debian:bookworm-slim\nWORKDIR /app\nCOPY --from=build /app/target/release/* .\nEXPOSE ${stack.port}\nENV PORT=${stack.port}`;
+    case "php":
+      return `FROM php:8.3-cli\nWORKDIR /app\nCOPY . .\nEXPOSE ${stack.port}\nENV PORT=${stack.port}\nCMD ["php","-S","0.0.0.0:${stack.port}"]`;
+    case "java":
+      return `FROM eclipse-temurin:21-jdk AS build\nWORKDIR /app\nCOPY . .\nRUN ${stack.buildCmd ?? "mvn package -DskipTests"}\nFROM eclipse-temurin:21-jre\nWORKDIR /app\nCOPY --from=build /app/target/*.jar app.jar\nEXPOSE ${stack.port}\nENV PORT=${stack.port}\nCMD ["java","-jar","app.jar"]`;
     default:
-      return `FROM ubuntu:22.04\nWORKDIR /app\nCOPY . .\nEXPOSE 3000\nENV PORT=3000\nCMD ["sh", "-c", "${stack.startCmd}"]`;
+      return `FROM ubuntu:22.04\nWORKDIR /app\nCOPY . .\nEXPOSE 3000\nENV PORT=3000\nCMD ["sh","-c","${stack.startCmd}"]`;
   }
 }

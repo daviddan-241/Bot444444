@@ -464,6 +464,13 @@ async function deployApp(opts: {
   log(`Copying source to persistent app directory...`);
   await cpSmart(sourceDir, appDest);
 
+  // Write env vars to .env in the persistent app dir so the process picks them up
+  if (Object.keys(envOverride).length > 0) {
+    const envContent = Object.entries(envOverride).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
+    await writeFile(path.join(appDest, ".env"), envContent);
+    log(`Wrote ${Object.keys(envOverride).length} env var(s) to .env`);
+  }
+
   if (stack.installCmd) {
     await runInstall(appDest, stack, log);
   } else {

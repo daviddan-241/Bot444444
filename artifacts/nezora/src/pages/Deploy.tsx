@@ -19,27 +19,27 @@ interface FrameworkBadge {
 }
 
 const SUPPORTED: FrameworkBadge[] = [
-  { label: '⚡ React / Vite',         type: 'static', color: '#61DAFB', hint: 'Builds to static files — served via CDN' },
-  { label: '▲ Next.js',              type: 'live',   color: '#fff',    hint: 'Live Node.js process — SSR + API routes' },
-  { label: '🟩 Node.js / Express',   type: 'live',   color: '#34C759', hint: 'Live Node.js server process' },
-  { label: '🐍 Python / Flask / FastAPI', type: 'live', color: '#3776AB', hint: 'Live Python process — auto-detects framework' },
-  { label: '🤖 Discord Bot',         type: 'live',   color: '#5865F2', hint: 'Live Node.js bot process — never served as static' },
-  { label: '📱 Telegram Bot',        type: 'live',   color: '#26A5E4', hint: 'Live Node.js or Python bot process' },
-  { label: '🐦 Twitter Bot',         type: 'live',   color: '#1DA1F2', hint: 'Live Node.js bot — auto-detected from twitter-api-v2' },
-  { label: '🌐 Static HTML',         type: 'static', color: '#FF9500', hint: 'Plain HTML/CSS/JS — hosted as a static site' },
-  { label: '💎 Ruby / Sinatra',      type: 'live',   color: '#CC342D', hint: 'Live Ruby/Rails process' },
-  { label: '🐹 Go',                  type: 'live',   color: '#00ADD8', hint: 'Compiled Go binary — live process' },
-  { label: '🐘 PHP',                 type: 'live',   color: '#8892BF', hint: 'Live PHP built-in server' },
-  { label: '🦕 Bun / Deno',         type: 'live',   color: '#f472b6', hint: 'Live Bun/Deno runtime process' },
+  { label: 'React / Vite',        type: 'static', color: '#61DAFB', hint: 'Builds to static files — served via CDN' },
+  { label: 'Next.js',             type: 'live',   color: '#fff',    hint: 'Live Node.js process — SSR + API routes' },
+  { label: 'Node.js / Express',   type: 'live',   color: '#34C759', hint: 'Live Node.js server process' },
+  { label: 'Python / Flask / FastAPI', type: 'live', color: '#3776AB', hint: 'Live Python process — auto-detects framework' },
+  { label: 'Discord Bot',         type: 'live',   color: '#5865F2', hint: 'Live Node.js bot process — never served as static' },
+  { label: 'Telegram Bot',        type: 'live',   color: '#26A5E4', hint: 'Live Node.js or Python bot process' },
+  { label: 'Twitter Bot',         type: 'live',   color: '#1DA1F2', hint: 'Live Node.js bot — auto-detected from twitter-api-v2' },
+  { label: 'Static HTML',         type: 'static', color: '#FF9500', hint: 'Plain HTML/CSS/JS — hosted as a static site' },
+  { label: 'Ruby / Sinatra',      type: 'live',   color: '#CC342D', hint: 'Live Ruby/Rails process' },
+  { label: 'Go',                  type: 'live',   color: '#00ADD8', hint: 'Compiled Go binary — live process' },
+  { label: 'PHP',                 type: 'live',   color: '#8892BF', hint: 'Live PHP built-in server' },
+  { label: 'Bun / Deno',         type: 'live',   color: '#f472b6', hint: 'Live Bun/Deno runtime process' },
 ];
 
 interface EnvVar { key: string; value: string }
 
 function LogLine({ line }: { line: string }) {
-  const isErr = /\[ERR\]|error|failed|Error/i.test(line) && !/✅/.test(line);
-  const isOk = /✅|ok|success|done|live/i.test(line) && !/ERR/.test(line);
-  const isInfo = /📦|🔨|📡|📂|🔍|🚀|📁/.test(line);
-  const isWarn = /⚠️/.test(line);
+  const isErr = /\[ERR\]|error|failed|Error/i.test(line) && !/success|done|live/i.test(line);
+  const isOk = /success|done|live|complete|installed/i.test(line) && !/ERR/i.test(line);
+  const isInfo = /detecting|cloning|extracting|copying|installing|building|starting|queuing/i.test(line);
+  const isWarn = /warn|skipping|fallback|not found/i.test(line);
   const color = isErr ? '#FF3B30' : isWarn ? '#FF9500' : isOk ? '#34C759' : isInfo ? '#007AFF' : '#e5e5e5';
   return <div style={{ color, fontFamily: 'monospace', fontSize: 12, padding: '1px 0', wordBreak: 'break-all' }}>{line}</div>;
 }
@@ -73,7 +73,6 @@ function EnvEditor({ vars, onChange }: { vars: EnvVar[]; onChange: (v: EnvVar[])
 export default function Deploy() {
   const base = BASE();
 
-  // Persisted form state
   const [input, setInput] = useState<InputMode>(() => {
     try { return (localStorage.getItem(`${DEPLOY_STORAGE_KEY}_mode`) as InputMode) || 'zip'; } catch { return 'zip'; }
   });
@@ -96,7 +95,6 @@ export default function Deploy() {
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Persist form fields to localStorage on change
   useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_mode`, input); } catch {} }, [input]);
   useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_name`, name); } catch {} }, [name]);
   useEffect(() => { try { localStorage.setItem(`${DEPLOY_STORAGE_KEY}_slug`, customSlug); } catch {} }, [customSlug]);
@@ -135,7 +133,7 @@ export default function Deploy() {
       let r: Response;
       if (input === 'zip') {
         if (!file) { setLogs(['[ERR] No file selected']); setDeploying(false); return; }
-        setLogs([`📂 Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)…`]);
+        setLogs([`Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)...`]);
         const fd = new FormData();
         fd.append('file', file);
         fd.append('name', name || file.name.replace(/\.zip$/i, ''));
@@ -144,7 +142,7 @@ export default function Deploy() {
         r = await fetch(`${base}/api/real/app-deploy/zip`, { method: 'POST', body: fd, credentials: 'include' });
       } else {
         if (!gitUrl) { setLogs(['[ERR] No Git URL']); setDeploying(false); return; }
-        setLogs([`📡 Queuing deploy of ${gitUrl}…`]);
+        setLogs([`Queuing deploy of ${gitUrl}...`]);
         r = await fetch(`${base}/api/real/app-deploy/git`, {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -159,7 +157,7 @@ export default function Deploy() {
         return;
       }
       setJobId(data.jobId);
-      setLogs(prev => [...prev, `✅ Queued — Job: ${data.jobId.slice(-10)}`]);
+      setLogs(prev => [...prev, `Queued — Job: ${data.jobId.slice(-10)}`]);
       pollJob(data.jobId);
     } catch (e: any) {
       setLogs([`[ERR] Network error: ${e.message}`]);
@@ -184,7 +182,7 @@ export default function Deploy() {
           <div className="section-subtitle">Drop a ZIP or paste a Git URL — auto-detects everything and deploys it live</div>
         </div>
 
-        {/* Framework badges — clickable with type info */}
+        {/* Framework badges */}
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Info size={11} /> Hover a badge to see how it deploys
@@ -215,7 +213,7 @@ export default function Deploy() {
                     pointerEvents: 'none',
                   }}>
                     <span style={{ color: f.type === 'live' ? '#34C759' : '#007AFF', fontWeight: 700 }}>
-                      {f.type === 'live' ? '🟢 Live Process' : '🔵 Static Site'}
+                      {f.type === 'live' ? 'Live Process' : 'Static Site'}
                     </span>
                     <br />
                     {f.hint}
@@ -309,7 +307,7 @@ export default function Deploy() {
                 <input className="field" placeholder="main" value={gitBranch} onChange={e => setGitBranch(e.target.value)} />
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                💡 Public repos work as-is. Private repos: prepend your token → <code style={{ fontFamily: 'monospace' }}>https://TOKEN@github.com/user/repo</code>
+                Public repos work as-is. Private repos: prepend your token — <code style={{ fontFamily: 'monospace' }}>https://TOKEN@github.com/user/repo</code>
               </div>
             </>
           )}
@@ -328,7 +326,7 @@ export default function Deploy() {
             disabled={deploying || (input === 'zip' ? !file : !gitUrl)}
           >
             {deploying
-              ? <><Loader2 size={15} className="spin" /> Deploying — auto-detecting stack…</>
+              ? <><Loader2 size={15} className="spin" /> Deploying — auto-detecting stack...</>
               : <><Rocket size={15} /> Deploy</>}
           </button>
         </div>
@@ -344,7 +342,7 @@ export default function Deploy() {
             </div>
             <div ref={logRef} style={{ background: '#0A0A0F', borderRadius: '0 0 12px 12px', padding: '10px 14px', maxHeight: 360, overflowY: 'auto' }}>
               {logs.map((l, i) => <LogLine key={i} line={l} />)}
-              {deploying && logs.length === 0 && <LogLine line="⠦ Waiting for worker…" />}
+              {deploying && logs.length === 0 && <LogLine line="Waiting for worker..." />}
             </div>
           </div>
         )}
@@ -355,7 +353,7 @@ export default function Deploy() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: result.ok ? 12 : 4 }}>
               {result.ok ? <CheckCircle2 size={20} color="#34C759" /> : <XCircle size={20} color="#FF3B30" />}
               <span style={{ fontSize: 15, fontWeight: 700, color: result.ok ? '#34C759' : '#FF3B30' }}>
-                {result.ok ? 'Deployed successfully!' : 'Deploy failed'}
+                {result.ok ? 'Deployed successfully' : 'Deploy failed'}
               </span>
             </div>
             {result.ok && result.url && (
@@ -368,21 +366,21 @@ export default function Deploy() {
             )}
             {result.ok && result.type === 'live-app' && (
               <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>🟢 Live process running — auto-restarts on crash</div>
-                <a href="/processes" style={{ fontSize: 12, color: '#007AFF' }}>View in Live Apps →</a>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Live process running — auto-restarts on crash</div>
+                <a href="/processes" style={{ fontSize: 12, color: '#007AFF' }}>View in Live Apps</a>
               </div>
             )}
             {result.ok && result.type === 'static-site' && (
               <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>🔵 Static site hosted — instant global delivery</div>
-                <a href="/sites" style={{ fontSize: 12, color: '#007AFF' }}>View in My Hosted Sites →</a>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Static site hosted — instant global delivery</div>
+                <a href="/sites" style={{ fontSize: 12, color: '#007AFF' }}>View in My Hosted Sites</a>
               </div>
             )}
             {!result.ok && (
               <div>
                 <div style={{ fontSize: 13, color: '#FF3B30', marginTop: 4 }}>{result.error}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>
-                  💡 Tip: Ask the <a href="/ai" style={{ color: '#5856D6' }}>AI Assistant</a> to diagnose this error automatically
+                  Tip: Ask the <a href="/ai" style={{ color: '#5856D6' }}>AI Assistant</a> to diagnose this error automatically
                 </div>
               </div>
             )}

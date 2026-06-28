@@ -17,7 +17,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: "#7C3AED",
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
         tabBarStyle: {
@@ -65,24 +65,12 @@ export default function TabLayout() {
       <Tabs.Screen
         name="builder"
         options={{
-          title: "Builder",
+          title: "Services",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="wrench.and.screwdriver" tintColor={color} size={22} />
+              <SymbolView name="server.rack" tintColor={color} size={22} />
             ) : (
-              <Feather name="tool" size={21} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="code"
-        options={{
-          title: "Code",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="chevron.left.slash.chevron.right" tintColor={color} size={22} />
-            ) : (
-              <Feather name="code" size={21} color={color} />
+              <Feather name="server" size={21} color={color} />
             ),
         }}
       />
@@ -91,12 +79,24 @@ export default function TabLayout() {
         options={{
           title: "Deploy",
           tabBarBadge: activeCount > 0 ? activeCount : undefined,
-          tabBarBadgeStyle: { backgroundColor: "#3B82F6", fontSize: 10 },
+          tabBarBadgeStyle: { backgroundColor: "#7C3AED", fontSize: 10 },
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="arrow.up.circle" tintColor={color} size={22} />
             ) : (
               <Feather name="upload-cloud" size={21} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="code"
+        options={{
+          title: "Events",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="list.bullet.rectangle" tintColor={color} size={22} />
+            ) : (
+              <Feather name="activity" size={21} color={color} />
             ),
         }}
       />
@@ -112,7 +112,7 @@ export default function TabLayout() {
             ),
         }}
       />
-      {/* Hide old tabs that no longer exist */}
+      {/* Hidden tabs */}
       <Tabs.Screen name="apps" options={{ href: null }} />
       <Tabs.Screen name="ai" options={{ href: null }} />
     </Tabs>

@@ -10,14 +10,16 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useApi } from "@/hooks/useApi";
 import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/contexts/AuthContext";
 
-interface Project {
+interface Process {
   id: string;
   name: string;
   status: string;
@@ -25,40 +27,182 @@ interface Project {
   framework?: string;
   language?: string;
   port?: number;
+  restarts?: number;
+  pid?: number;
+  uptime?: number;
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  running: "#30D158",
-  crashed: "#FF453A",
-  stopped: "#6B7DB3",
-  starting: "#FF9F0A",
-  restarting: "#FF9F0A",
+type FilterTab = "active" | "all";
+
+const RUNTIME_LABEL: Record<string, string> = {
+  python: "Python 3",
+  python3: "Python 3",
+  javascript: "Node",
+  node: "Node",
+  typescript: "Node",
+  go: "Go",
+  rust: "Rust",
+  ruby: "Ruby",
+  php: "PHP",
+  java: "Java",
+  deno: "Deno",
+  bun: "Bun",
 };
 
-const FRAMEWORK_ICON: Record<string, string> = {
-  nextjs: "triangle",
-  "react-vite": "zap",
-  vue: "layers",
-  "node-express": "server",
-  python: "cpu",
-  static: "globe",
-};
+function runtimeLabel(p: Process): string {
+  return (
+    RUNTIME_LABEL[p.language ?? ""] ||
+    RUNTIME_LABEL[p.framework ?? ""] ||
+    (p.language ?? p.framework ?? "App")
+  );
+}
 
-export default function BuilderScreen() {
+function timeAgo(ms: number | undefined): string {
+  if (!ms) return "—";
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function statusBadge(status: string): { label: string; color: string; bg: string; dot: string } {
+  switch (status) {
+    case "running":
+      return { label: "Deployed", color: "#16A34A", bg: "#DCFCE7", dot: "#22C55E" };
+    case "starting":
+    case "restarting":
+      return { label: "Deploying", color: "#1D4ED8", bg: "#DBEAFE", dot: "#3B82F6" };
+    case "crashed":
+      return { label: "Failed deploy", color: "#DC2626", bg: "#FEE2E2", dot: "#EF4444" };
+    case "stopped":
+      return { label: "Suspended", color: "#6B7280", bg: "#F3F4F6", dot: "#9CA3AF" };
+    default:
+      return { label: status, color: "#6B7280", bg: "#F3F4F6", dot: "#9CA3AF" };
+  }
+}
+
+function ServiceCard({ p, onRestart, onDelete }: {
+  p: Process;
+  onRestart: () => void;
+  onDelete: () => void;
+}) {
+  const colors = useColors();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const badge = statusBadge(p.status);
+  const runtime = runtimeLabel(p);
+  const isRunning = p.status === "running";
+  const isWorker = !p.url || p.port === 0;
+
+  return (
+    <View style={{ backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <Pressable
+        onPress={() => setMenuOpen(v => !v)}
+        style={{ paddingHorizontal: 20, paddingVertical: 16 }}
+      >
+        {/* Service name row */}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <Text
+            style={{ fontSize: 16, fontWeight: "600", color: "#5B21B6", fontFamily: "Inter_600SemiBold", flex: 1 }}
+            numberOfLines={1}
+          >
+            {p.name}
+          </Text>
+          <Pressable
+            onPress={() => setMenuOpen(v => !v)}
+            style={{ padding: 6, marginLeft: 8 }}
+          >
+            <Feather name="more-horizontal" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        </View>
+
+        {/* Detail rows */}
+        <View style={{ gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={{ width: 90, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.3 }}>STATUS</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: badge.bg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+              {(p.status === "starting" || p.status === "restarting")
+                ? <ActivityIndicator size="small" color={badge.dot} style={{ width: 14, height: 14 }} />
+                : <Feather name={isRunning ? "check" : p.status === "crashed" ? "x" : "pause"} size={12} color={badge.color} />
+              }
+              <Text style={{ fontSize: 13, color: badge.color, fontFamily: "Inter_500Medium" }}>{badge.label}</Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={{ width: 90, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.3 }}>RUNTIME</Text>
+            <View style={{ backgroundColor: colors.muted, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+              <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{runtime}</Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={{ width: 90, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.3 }}>TYPE</Text>
+            <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular" }}>
+              {isWorker ? "Background worker" : "Web service"}
+              {p.restarts ? `  ·  ${p.restarts} restart${p.restarts !== 1 ? "s" : ""}` : ""}
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={{ width: 90, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.3 }}>UPDATED</Text>
+            <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular" }}>
+              {timeAgo(p.uptime ? Date.now() - p.uptime * 1000 : undefined)}
+            </Text>
+          </View>
+        </View>
+      </Pressable>
+
+      {/* Action menu */}
+      {menuOpen && (
+        <View style={{ paddingHorizontal: 20, paddingBottom: 14, flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+          {p.url && (
+            <Pressable
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#5B21B620" }}
+              onPress={() => { setMenuOpen(false); }}
+            >
+              <Feather name="external-link" size={14} color="#7C3AED" />
+              <Text style={{ fontSize: 13, color: "#7C3AED", fontFamily: "Inter_500Medium" }}>Open</Text>
+            </Pressable>
+          )}
+          <Pressable
+            style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#DBEAFE" }}
+            onPress={() => { setMenuOpen(false); onRestart(); }}
+          >
+            <Feather name="refresh-cw" size={14} color="#1D4ED8" />
+            <Text style={{ fontSize: 13, color: "#1D4ED8", fontFamily: "Inter_500Medium" }}>Restart</Text>
+          </Pressable>
+          <Pressable
+            style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#FEE2E2" }}
+            onPress={() => { setMenuOpen(false); onDelete(); }}
+          >
+            <Feather name="trash-2" size={14} color="#DC2626" />
+            <Text style={{ fontSize: 13, color: "#DC2626", fontFamily: "Inter_500Medium" }}>Delete</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
+export default function ServicesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { get, post } = useApi();
+  const { get, post, del } = useApi();
+  const { serverUrl } = useAuth();
 
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [filter, setFilter] = useState<FilterTab>("active");
+  const [search, setSearch] = useState("");
+  const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const load = useCallback(async (manual = false) => {
     if (manual) { setRefreshing(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }
     try {
-      const data = await get("/projects").catch(() => ({ projects: [] }));
-      setProjects(data?.projects ?? []);
+      const r = await get("/real/processes");
+      const list: Process[] = r?.processes ?? r?.data ?? [];
+      setProcesses(list);
     } catch {}
     setLoading(false);
     if (manual) setRefreshing(false);
@@ -66,141 +210,153 @@ export default function BuilderScreen() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const t = setInterval(() => load(), 10000);
+    const t = setInterval(() => load(), 8000);
     return () => clearInterval(t);
   }, [load]);
 
-  const doAction = async (project: Project, action: "start" | "stop" | "restart" | "delete") => {
-    if (action === "delete") {
-      Alert.alert("Delete App", `Remove ${project.name}?`, [
+  const restartProcess = async (id: string) => {
+    try {
+      await post(`/real/processes/${id}/restart`, {});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => load(), 1200);
+    } catch { Alert.alert("Error", "Could not restart service."); }
+  };
+
+  const deleteProcess = (id: string, name: string) => {
+    Alert.alert(
+      `Delete "${name}"?`,
+      "This will permanently stop the service and remove all its files.",
+      [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete", style: "destructive", onPress: async () => {
-            setActionLoading(project.id + action);
-            try { await post(`/projects/${project.id}/delete`, {}); await load(); } catch {}
-            setActionLoading(null);
-          }
+          text: "Delete", style: "destructive",
+          onPress: async () => {
+            try {
+              await del(`/real/processes/${id}`);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              setProcesses(prev => prev.filter(p => p.id !== id));
+            } catch { Alert.alert("Error", "Could not delete service."); }
+          },
         },
-      ]);
-      return;
-    }
-    setActionLoading(project.id + action);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await post(`/projects/${project.id}/${action}`, {});
-      await load();
-    } catch (e: any) {
-      Alert.alert("Error", e.message ?? "Action failed");
-    }
-    setActionLoading(null);
+      ]
+    );
   };
+
+  const filtered = processes.filter(p => {
+    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
+    const matchFilter = filter === "all" || (filter === "active" && p.status === "running");
+    return matchSearch && matchFilter;
+  });
+
+  const activeCount = processes.filter(p => p.status === "running").length;
+  const stoppedCount = processes.filter(p => p.status !== "running").length;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Header */}
+      <View style={{
+        paddingTop: insets.top + (Platform.OS === "web" ? 67 : 14),
+        paddingHorizontal: 20,
+        paddingBottom: 0,
+        backgroundColor: colors.background,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Services</Text>
+          <Pressable
+            onPress={() => load(true)}
+            style={({ pressed }) => ({ opacity: pressed ? 0.4 : 1, padding: 6 })}
+          >
+            <Feather name="refresh-cw" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        </View>
+
+        {/* Filter tabs */}
+        <View style={{ flexDirection: "row", gap: 0, marginBottom: 0 }}>
+          {([
+            ["active", `Active (${activeCount})`],
+            ["all", `All (${processes.length})`],
+          ] as const).map(([tab, label]) => (
+            <Pressable
+              key={tab}
+              onPress={() => { setFilter(tab); Haptics.selectionAsync(); }}
+              style={{
+                paddingHorizontal: 16, paddingVertical: 10,
+                borderBottomWidth: 2,
+                borderBottomColor: filter === tab ? "#7C3AED" : "transparent",
+                marginRight: 4,
+              }}
+            >
+              <Text style={{
+                fontSize: 14,
+                fontFamily: "Inter_600SemiBold",
+                color: filter === tab ? "#7C3AED" : colors.mutedForeground,
+              }}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#7C3AED" />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <LinearGradient
-          colors={["#0F1628", "#070B14"]}
-          style={{ paddingTop: insets.top + (Platform.OS === "web" ? 67 : 20), paddingHorizontal: 20, paddingBottom: 20 }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <LinearGradient colors={["#0891B2", "#3B82F6"]} style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" }}>
-              <Feather name="tool" size={20} color="#fff" />
-            </LinearGradient>
-            <View>
-              <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Builder</Text>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                {projects.length} app{projects.length !== 1 ? "s" : ""} deployed
-              </Text>
-            </View>
+        {/* Search */}
+        <View style={{ paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.muted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
+            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <TextInput
+              style={{ flex: 1, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+              placeholder="Search services"
+              placeholderTextColor={colors.mutedForeground}
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {search.length > 0 && (
+              <Pressable onPress={() => setSearch("")}>
+                <Feather name="x" size={15} color={colors.mutedForeground} />
+              </Pressable>
+            )}
           </View>
-        </LinearGradient>
+        </View>
 
         {loading ? (
-          <View style={{ alignItems: "center", paddingVertical: 60 }}>
-            <ActivityIndicator size="large" color={colors.primary} />
+          <View style={{ padding: 60, alignItems: "center", gap: 12 }}>
+            <ActivityIndicator size="large" color="#7C3AED" />
+            <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 13 }}>Loading services…</Text>
           </View>
-        ) : projects.length === 0 ? (
-          <View style={{ alignItems: "center", paddingVertical: 60, paddingHorizontal: 32 }}>
-            <LinearGradient colors={["#1D4ED8", "#7C3AED"]} style={{ width: 72, height: 72, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-              <Feather name="package" size={32} color="#fff" />
-            </LinearGradient>
-            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center", marginBottom: 8 }}>No apps yet</Text>
-            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 21 }}>
-              Deploy your first app from the Deploy tab using a Git repo.
+        ) : !serverUrl ? (
+          <View style={{ padding: 40, alignItems: "center", gap: 10 }}>
+            <Feather name="server" size={32} color={colors.mutedForeground} />
+            <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold", textAlign: "center" }}>No server connected</Text>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>Set your Nezora server URL in Settings to manage services.</Text>
+          </View>
+        ) : filtered.length === 0 ? (
+          <View style={{ padding: 40, alignItems: "center", gap: 10 }}>
+            <Feather name="inbox" size={32} color={colors.mutedForeground} />
+            <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold", textAlign: "center" }}>
+              {processes.length === 0 ? "No services yet" : "No services match your filter"}
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+              {processes.length === 0
+                ? "Go to Deploy to launch your first service from a Git repo."
+                : "Try changing the filter or search term."}
             </Text>
           </View>
         ) : (
-          <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
-            {projects.map((p) => {
-              const iconName = FRAMEWORK_ICON[p.framework ?? ""] ?? "box";
-              const isActing = (action: string) => actionLoading === p.id + action;
-              return (
-                <View key={p.id} style={{ backgroundColor: colors.card, borderRadius: 18, padding: 16, marginBottom: 12 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                    <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
-                      {/* @ts-ignore */}
-                      <Feather name={iconName} size={20} color={colors.primary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{p.name}</Text>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
-                        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: STATUS_COLOR[p.status] ?? "#6B7DB3" }} />
-                        <Text style={{ fontSize: 12, color: STATUS_COLOR[p.status] ?? colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{p.status}</Text>
-                        {p.framework && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>· {p.framework}</Text>}
-                        {p.port && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>· :{p.port}</Text>}
-                      </View>
-                    </View>
-                  </View>
-
-                  {p.url && (
-                    <View style={{ backgroundColor: colors.background, borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                      <Text style={{ fontSize: 12, color: "#3B82F6", fontFamily: "Inter_400Regular" }} numberOfLines={1}>{p.url}</Text>
-                    </View>
-                  )}
-
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    {p.status !== "running" && (
-                      <Pressable
-                        onPress={() => doAction(p, "start")}
-                        disabled={!!actionLoading}
-                        style={({ pressed }) => ({ flex: 1, backgroundColor: "#30D15818", borderRadius: 10, paddingVertical: 10, alignItems: "center", opacity: pressed ? 0.7 : 1 })}
-                      >
-                        {isActing("start") ? <ActivityIndicator size="small" color="#30D158" /> : <Feather name="play" size={15} color="#30D158" />}
-                      </Pressable>
-                    )}
-                    {p.status === "running" && (
-                      <Pressable
-                        onPress={() => doAction(p, "stop")}
-                        disabled={!!actionLoading}
-                        style={({ pressed }) => ({ flex: 1, backgroundColor: "#FF9F0A18", borderRadius: 10, paddingVertical: 10, alignItems: "center", opacity: pressed ? 0.7 : 1 })}
-                      >
-                        {isActing("stop") ? <ActivityIndicator size="small" color="#FF9F0A" /> : <Feather name="square" size={15} color="#FF9F0A" />}
-                      </Pressable>
-                    )}
-                    <Pressable
-                      onPress={() => doAction(p, "restart")}
-                      disabled={!!actionLoading}
-                      style={({ pressed }) => ({ flex: 1, backgroundColor: "#3B82F618", borderRadius: 10, paddingVertical: 10, alignItems: "center", opacity: pressed ? 0.7 : 1 })}
-                    >
-                      {isActing("restart") ? <ActivityIndicator size="small" color="#3B82F6" /> : <Feather name="refresh-cw" size={15} color="#3B82F6" />}
-                    </Pressable>
-                    <Pressable
-                      onPress={() => doAction(p, "delete")}
-                      disabled={!!actionLoading}
-                      style={({ pressed }) => ({ flex: 1, backgroundColor: "#FF453A18", borderRadius: 10, paddingVertical: 10, alignItems: "center", opacity: pressed ? 0.7 : 1 })}
-                    >
-                      {isActing("delete") ? <ActivityIndicator size="small" color="#FF453A" /> : <Feather name="trash-2" size={15} color="#FF453A" />}
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+          filtered.map(p => (
+            <ServiceCard
+              key={p.id}
+              p={p}
+              onRestart={() => restartProcess(p.id)}
+              onDelete={() => deleteProcess(p.id, p.name)}
+            />
+          ))
         )}
 
         <View style={{ height: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 90 }} />

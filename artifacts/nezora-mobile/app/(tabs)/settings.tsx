@@ -1,7 +1,6 @@
 import { Feather } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -9,7 +8,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Switch,
   Text,
   TextInput,
   View,
@@ -20,271 +18,272 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useApi } from "@/hooks/useApi";
 import { useColors } from "@/hooks/useColors";
 
+interface SystemStats {
+  cpu: number;
+  mem: { usedMb: number; totalMb: number; percent: number };
+  disk: { usedMb: number; totalMb: number; percent: number };
+  uptime: { pretty: string; seconds: number };
+  processes: { total: number; running: number; crashed: number };
+  workers: { total: number };
+  platform: string;
+  node: string;
+}
+
+function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  const colors = useColors();
+  return (
+    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}>{label}</Text>
+      <Text style={{ fontSize: 15, color: valueColor ?? colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{value}</Text>
+    </View>
+  );
+}
+
+function SectionHeader({ title }: { title: string }) {
+  const colors = useColors();
+  return (
+    <Text style={{ fontSize: 13, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, paddingHorizontal: 20, paddingTop: 28, paddingBottom: 10 }}>
+      {title}
+    </Text>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  const colors = useColors();
+  return (
+    <View style={{ marginHorizontal: 20, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden", paddingHorizontal: 16 }}>
+      {children}
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { serverUrl, token, setCredentials, clearCredentials } = useAuth();
   const { get } = useApi();
 
-  const [editUrl, setEditUrl] = useState(serverUrl);
-  const [editToken, setEditToken] = useState(token);
+  const [editUrl, setEditUrl] = useState(serverUrl ?? "");
+  const [editToken, setEditToken] = useState(token ?? "");
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pingStatus, setPingStatus] = useState<"idle" | "pinging" | "ok" | "fail">("idle");
+  const [stats, setStats] = useState<SystemStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
 
-  // Settings toggles
-  const [privacyMode, setPrivacyMode] = useState(true);
-  const [notifications, setNotifications] = useState(true);
-  const [darkTheme, setDarkTheme] = useState(true);
-  const [analytics, setAnalytics] = useState(false);
-  const [autoScale, setAutoScale] = useState(true);
+  useEffect(() => { setEditUrl(serverUrl ?? ""); setEditToken(token ?? ""); }, [serverUrl, token]);
 
-  // GitHub push state
-  const [pushing, setPushing] = useState(false);
-  const [pushLog, setPushLog] = useState<string[]>([]);
+  const loadStats = useCallback(async () => {
+    if (!serverUrl) return;
+    setLoadingStats(true);
+    try {
+      const r = await get("/system/stats");
+      if (r?.cpu !== undefined) setStats(r);
+      const v = await get("/health").catch(() => null);
+      if (v?.version) setVersion(v.version);
+    } catch {}
+    setLoadingStats(false);
+  }, [get, serverUrl]);
 
-  useEffect(() => { setEditUrl(serverUrl); setEditToken(token); }, [serverUrl, token]);
+  useEffect(() => { loadStats(); }, [loadStats]);
 
   const ping = async () => {
     setPingStatus("pinging");
     try {
-      const data = await get("/system/stats");
-      if (data?.cpu !== undefined) {
-        setPingStatus("ok");
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const url = editUrl.trim().replace(/\/$/, "");
+      const r = await fetch(`${url}/api/system/stats`, {
+        headers: { "x-nezora-admin-token": editToken ?? "" },
+      });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.cpu !== undefined) {
+          setPingStatus("ok");
+          setStats(d);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else {
+          setPingStatus("fail");
+        }
       } else {
         setPingStatus("fail");
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } catch {
       setPingStatus("fail");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-    setTimeout(() => setPingStatus("idle"), 4000);
   };
 
   const save = async () => {
-    if (!editUrl.trim() || !editToken.trim()) { Alert.alert("Missing info", "Both URL and token are required."); return; }
     setSaving(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const url = editUrl.trim().replace(/\/$/, "");
+    const tok = editToken.trim();
+    // Test connection first
     try {
-      const clean = editUrl.trim().replace(/\/$/, "");
-      const res = await fetch(`${clean}/api/healthz`, { headers: { "x-nezora-admin-token": editToken.trim() }, signal: AbortSignal.timeout(6000) });
-      if (!res.ok) throw new Error("Status " + res.status);
-      await setCredentials(clean, editToken.trim());
+      const r = await fetch(`${url}/api/health`, { headers: { "x-nezora-admin-token": tok } });
+      if (!r.ok && r.status !== 401) throw new Error(`HTTP ${r.status}`);
+      setCredentials(url, tok);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Saved", "Connection updated.");
+      Alert.alert("Connected", "Server credentials saved.");
     } catch (e: any) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Failed", e.message ?? "Could not verify connection.");
-    } finally { setSaving(false); }
-  };
-
-  const pushToGitHub = async () => {
-    Alert.alert(
-      "Push to GitHub",
-      "This will push all current code to daviddan-241/Bot444444 on GitHub. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Push", onPress: async () => {
-            setPushing(true);
-            setPushLog(["Pushing to GitHub..."]);
-            try {
-              const res = await fetch(`${serverUrl}/api/github/push`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-nezora-admin-token": token },
-                body: JSON.stringify({ repo: "daviddan-241/Bot444444" }),
-                signal: AbortSignal.timeout(60000),
-              });
-              const data = await res.json();
-              if (data.ok) {
-                setPushLog(data.logs ?? ["✓ Pushed successfully"]);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              } else {
-                setPushLog([`✗ ${data.error ?? "Push failed"}`, ...(data.logs ?? [])]);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              }
-            } catch (e: any) {
-              setPushLog([`✗ ${e.message ?? "Network error"}`]);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            } finally {
-              setPushing(false);
-            }
-          }
-        },
-      ]
-    );
+      // Save anyway even if ping fails (server might be starting)
+      setCredentials(url, tok);
+      Alert.alert("Saved", "Credentials saved. Server may be starting up — tap Test Connection to verify.");
+    }
+    setSaving(false);
   };
 
   const disconnect = () => {
-    Alert.alert("Disconnect", "Removes your saved server and token.", [
+    Alert.alert("Disconnect", "Remove saved server credentials?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Disconnect", style: "destructive", onPress: async () => { await clearCredentials(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } },
+      { text: "Disconnect", style: "destructive", onPress: () => { clearCredentials(); setStats(null); setVersion(null); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } },
     ]);
   };
 
-  const toggleRow = (label: string, value: boolean, onChange: (v: boolean) => void, iconName: string, last = false) => (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: last ? 0 : 1, borderBottomColor: colors.border }}>
-      {/* @ts-ignore */}
-      <Feather name={iconName} size={15} color={colors.mutedForeground} style={{ marginRight: 12 }} />
-      <Text style={{ flex: 1, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}>{label}</Text>
-      <Switch
-        value={value}
-        onValueChange={(v) => { onChange(v); Haptics.selectionAsync(); }}
-        trackColor={{ false: colors.muted, true: "#3B82F6" }}
-        thumbColor="#fff"
-        ios_backgroundColor={colors.muted}
-      />
-    </View>
-  );
+  const cpu = Math.round(stats?.cpu ?? 0);
+  const ram = Math.round(stats?.mem?.percent ?? 0);
+  const disk = Math.round(stats?.disk?.percent ?? 0);
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
-        <LinearGradient colors={["#0F1628", "#070B14"]} style={{ paddingTop: insets.top + (Platform.OS === "web" ? 67 : 20), paddingHorizontal: 20, paddingBottom: 20 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <LinearGradient colors={["#6B7DB3", "#3B82F6"]} style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" }}>
-              <Feather name="settings" size={20} color="#fff" />
-            </LinearGradient>
-            <View>
-              <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Settings</Text>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>DANNY'S Cloud</Text>
-            </View>
-          </View>
-        </LinearGradient>
-
-        {/* Connection status */}
-        {pingStatus === "ok" && (
-          <View style={{ marginHorizontal: 20, marginTop: 16, backgroundColor: "#30D15818", borderRadius: 13, padding: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Feather name="check-circle" size={16} color="#30D158" />
-            <Text style={{ fontSize: 13, color: "#30D158", fontFamily: "Inter_500Medium" }}>Connected — server responding</Text>
-          </View>
-        )}
-        {pingStatus === "fail" && (
-          <View style={{ marginHorizontal: 20, marginTop: 16, backgroundColor: "#FF453A18", borderRadius: 13, padding: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Feather name="alert-circle" size={16} color="#FF453A" />
-            <Text style={{ fontSize: 13, color: "#FF453A", fontFamily: "Inter_500Medium" }}>Could not reach server</Text>
-          </View>
-        )}
-
-        {/* Preferences */}
-        <Text style={{ fontSize: 12, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, paddingHorizontal: 20, marginTop: 24, marginBottom: 8 }}>Preferences</Text>
-        <View style={{ backgroundColor: colors.card, borderRadius: 18, marginHorizontal: 20, overflow: "hidden" }}>
-          {toggleRow("Theme", darkTheme, setDarkTheme, "moon")}
-          {toggleRow("Privacy Mode", privacyMode, setPrivacyMode, "lock")}
-          {toggleRow("Notifications", notifications, setNotifications, "bell")}
-          {toggleRow("Analytics", analytics, setAnalytics, "bar-chart-2")}
-          {toggleRow("Auto Scale", autoScale, setAutoScale, "zap", true)}
+        <View style={{ paddingTop: insets.top + (Platform.OS === "web" ? 67 : 14), paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Settings</Text>
         </View>
 
-        {/* Hosting */}
-        <Text style={{ fontSize: 12, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, paddingHorizontal: 20, marginTop: 24, marginBottom: 8 }}>Hosting</Text>
-        <View style={{ backgroundColor: colors.card, borderRadius: 18, marginHorizontal: 20, overflow: "hidden" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Feather name="server" size={15} color={colors.mutedForeground} style={{ marginRight: 10 }} />
+        {/* Server connection */}
+        <SectionHeader title="Server Connection" />
+        <Card>
+          {/* Server URL */}
+          <View style={{ paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Nezora Server URL</Text>
             <TextInput
-              style={{ flex: 1, paddingVertical: 14, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+              style={{ fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}
               value={editUrl}
               onChangeText={setEditUrl}
-              placeholder="http://your-server:8080"
+              placeholder="https://yourserver.replit.dev"
               placeholderTextColor={colors.mutedForeground}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
+              autoCapitalize="none" autoCorrect={false} keyboardType="url"
             />
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16 }}>
-            <Feather name="key" size={15} color={colors.mutedForeground} style={{ marginRight: 10 }} />
-            <TextInput
-              style={{ flex: 1, paddingVertical: 14, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}
-              value={editToken}
-              onChangeText={setEditToken}
-              placeholder="Admin token"
-              placeholderTextColor={colors.mutedForeground}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry={!showToken}
-            />
-            <Pressable onPress={() => setShowToken(v => !v)} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 6 })}>
-              <Feather name={showToken ? "eye-off" : "eye"} size={16} color={colors.mutedForeground} />
-            </Pressable>
-          </View>
-        </View>
 
-        <View style={{ marginTop: 12, paddingHorizontal: 20, gap: 10 }}>
-          <Pressable onPress={save} disabled={saving} style={({ pressed }) => ({ opacity: pressed || saving ? 0.8 : 1 })}>
-            <LinearGradient colors={["#1D4ED8", "#7C3AED"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 15, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              {saving ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="save" size={16} color="#fff" />}
-              <Text style={{ fontSize: 16, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>Save & Reconnect</Text>
-            </LinearGradient>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => ({ backgroundColor: colors.card, borderRadius: 15, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: pressed ? 0.7 : 1 })}
-            onPress={ping}
-            disabled={pingStatus === "pinging"}
-          >
-            {pingStatus === "pinging" ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="wifi" size={16} color={colors.primary} />}
-            <Text style={{ fontSize: 15, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>Test Connection</Text>
-          </Pressable>
-        </View>
-
-        {/* GitHub */}
-        <Text style={{ fontSize: 12, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, paddingHorizontal: 20, marginTop: 24, marginBottom: 8 }}>GitHub</Text>
-        <View style={{ paddingHorizontal: 20 }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: 18, padding: 16, marginBottom: 10 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              <Feather name="github" size={18} color={colors.foreground} />
-              <Text style={{ fontSize: 15, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>daviddan-241/Bot444444</Text>
+          {/* Admin token */}
+          <View style={{ paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Admin Token  <Text style={{ textTransform: "none" }}>(optional)</Text></Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <TextInput
+                style={{ flex: 1, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                value={editUrl === serverUrl && !showToken && editToken ? "••••••••••••" : editToken}
+                onChangeText={v => { setEditToken(v); }}
+                onFocus={() => setShowToken(true)}
+                placeholder="Leave blank for open mode"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none" autoCorrect={false}
+                secureTextEntry={!showToken}
+              />
+              <Pressable onPress={() => setShowToken(v => !v)} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
+                <Feather name={showToken ? "eye-off" : "eye"} size={17} color={colors.mutedForeground} />
+              </Pressable>
             </View>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 12 }}>
-              Push latest code to GitHub so Render.com can deploy it.
-            </Text>
-            <Pressable onPress={pushToGitHub} disabled={pushing} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
-              <LinearGradient colors={["#1a1a2e", "#16213e"]} style={{ borderRadius: 12, paddingVertical: 13, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: "#30363d" }}>
-                {pushing ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="upload" size={16} color="#fff" />}
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#fff", fontFamily: "Inter_600SemiBold" }}>
-                  {pushing ? "Pushing…" : "Push to GitHub"}
-                </Text>
-              </LinearGradient>
-            </Pressable>
           </View>
 
-          {pushLog.length > 0 && (
-            <View style={{ backgroundColor: "#080B12", borderRadius: 14, padding: 14 }}>
-              {pushLog.map((l, i) => (
-                <Text key={i} style={{ fontSize: 12, color: l.startsWith("✓") ? "#30D158" : l.startsWith("✗") ? "#FF453A" : "#94A3B8", fontFamily: "Inter_400Regular", lineHeight: 18 }}>{l}</Text>
-              ))}
-            </View>
-          )}
-        </View>
+          {/* Actions */}
+          <View style={{ flexDirection: "row", gap: 10, paddingVertical: 14 }}>
+            <Pressable
+              onPress={ping}
+              style={({ pressed }) => ({
+                flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: "center",
+                backgroundColor: pingStatus === "ok" ? "#DCFCE7" : pingStatus === "fail" ? "#FEE2E2" : colors.muted,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              {pingStatus === "pinging"
+                ? <ActivityIndicator size="small" color={colors.mutedForeground} />
+                : <Text style={{ fontSize: 14, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: pingStatus === "ok" ? "#16A34A" : pingStatus === "fail" ? "#DC2626" : colors.foreground }}>
+                    {pingStatus === "ok" ? "✓ Connected" : pingStatus === "fail" ? "✗ Failed" : "Test Connection"}
+                  </Text>
+              }
+            </Pressable>
+            <Pressable
+              onPress={save}
+              disabled={saving}
+              style={({ pressed }) => ({
+                flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: "center",
+                backgroundColor: "#7C3AED",
+                opacity: pressed || saving ? 0.7 : 1,
+              })}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={{ fontSize: 14, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: "#fff" }}>Save</Text>
+              }
+            </Pressable>
+          </View>
+        </Card>
+
+        {/* Live system stats */}
+        {serverUrl && (
+          <>
+            <SectionHeader title="System Status" />
+            <Card>
+              {loadingStats && !stats ? (
+                <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                  <ActivityIndicator size="small" color="#7C3AED" />
+                </View>
+              ) : stats ? (
+                <>
+                  <Row label="CPU Usage" value={`${cpu}%`} valueColor={cpu > 85 ? "#EF4444" : cpu > 60 ? "#F59E0B" : "#22C55E"} />
+                  <Row label="Memory" value={`${stats.mem.usedMb.toFixed(0)} / ${stats.mem.totalMb.toFixed(0)} MB (${ram}%)`} valueColor={ram > 85 ? "#EF4444" : undefined} />
+                  <Row label="Disk" value={`${disk}% used`} valueColor={disk > 85 ? "#EF4444" : undefined} />
+                  <Row label="Uptime" value={stats.uptime?.pretty ?? "—"} />
+                  <Row label="Running processes" value={`${stats.processes?.running ?? 0} / ${stats.processes?.total ?? 0}`} valueColor="#22C55E" />
+                  {stats.processes?.crashed > 0 && <Row label="Crashed" value={String(stats.processes.crashed)} valueColor="#EF4444" />}
+                  <Row label="Background workers" value={String(stats.workers?.total ?? 0)} />
+                  {version && <Row label="Server version" value={version} />}
+                  {stats.node && <Row label="Node.js" value={stats.node} />}
+                  <View style={{ paddingVertical: 14 }}>
+                    <Pressable onPress={loadStats} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, alignItems: "center" })}>
+                      <Text style={{ fontSize: 14, color: "#7C3AED", fontFamily: "Inter_500Medium" }}>Refresh stats</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : (
+                <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                  <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 13 }}>
+                    Could not load stats. Check connection.
+                  </Text>
+                </View>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* Danger zone */}
+        {serverUrl && (
+          <>
+            <SectionHeader title="Danger Zone" />
+            <Card>
+              <Pressable
+                onPress={disconnect}
+                style={({ pressed }) => ({ paddingVertical: 16, flexDirection: "row", alignItems: "center", gap: 10, opacity: pressed ? 0.6 : 1 })}
+              >
+                <Feather name="log-out" size={18} color="#DC2626" />
+                <Text style={{ fontSize: 15, color: "#DC2626", fontFamily: "Inter_500Medium" }}>Disconnect from server</Text>
+              </Pressable>
+            </Card>
+          </>
+        )}
 
         {/* About */}
-        <Text style={{ fontSize: 12, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, paddingHorizontal: 20, marginTop: 24, marginBottom: 8 }}>About</Text>
-        <View style={{ backgroundColor: colors.card, borderRadius: 18, marginHorizontal: 20, overflow: "hidden" }}>
-          {[
-            { label: "App", value: "Danny's Cloud OS", icon: "cloud" },
-            { label: "Version", value: "2.1", icon: "tag" },
-            { label: "Repo", value: "daviddan-241/Bot444444", icon: "github" },
-            { label: "Platform", value: Platform.OS === "ios" ? "iOS" : Platform.OS === "android" ? "Android" : "Web", icon: "smartphone" },
-          ].map((row, i, arr) => (
-            <View key={row.label} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
-              {/* @ts-ignore */}
-              <Feather name={row.icon} size={15} color={colors.mutedForeground} style={{ marginRight: 12 }} />
-              <Text style={{ flex: 1, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" }}>{row.label}</Text>
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{row.value}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Disconnect */}
-        <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
-          <Pressable style={({ pressed }) => ({ borderRadius: 15, paddingVertical: 15, alignItems: "center", borderWidth: 1.5, borderColor: "#FF453A40", opacity: pressed ? 0.7 : 1 })} onPress={disconnect}>
-            <Text style={{ fontSize: 15, fontWeight: "600", color: "#FF453A", fontFamily: "Inter_600SemiBold" }}>Disconnect Server</Text>
-          </Pressable>
-        </View>
+        <SectionHeader title="About" />
+        <Card>
+          <Row label="App" value="Nezora Cloud" />
+          <Row label="Version" value="2.0.0" />
+          <Row label="Platform" value={Platform.OS === "ios" ? "iOS" : Platform.OS === "android" ? "Android" : "Web"} />
+        </Card>
 
         <View style={{ height: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 90 }} />
       </ScrollView>

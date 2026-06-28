@@ -4,13 +4,10 @@ import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,366 +16,292 @@ import { useApi } from "@/hooks/useApi";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/contexts/AuthContext";
 
-interface Message { id: string; role: "user" | "assistant"; content: string; ts: number; }
-
-interface ServerJob {
+interface DeployJob {
   id: string;
   name: string;
+  slug: string;
   status: "queued" | "running" | "done" | "failed";
   createdAt: number;
   startedAt?: number;
   finishedAt?: number;
-  logs: string[];
-  result?: { url?: string };
+  logs?: string[];
+  result?: { url?: string; type?: string };
   error?: string;
 }
 
-const SUGGESTIONS = [
-  "Generate a Node.js Express server",
-  "Write a Python Flask API with health check",
-  "Create a Dockerfile for this project",
-  "Review my deployment config",
-  "How do I add a custom domain?",
-  "Optimize my server for production",
-];
+interface Event {
+  id: string;
+  icon: string;
+  iconColor: string;
+  iconBg: string;
+  title: string;
+  sub: string;
+  ts: number;
+  logs?: string[];
+  url?: string;
+  error?: string;
+  isActive?: boolean;
+}
 
-function logColor(line: string) {
-  if (/\[ERR\]|error|failed|❌/i.test(line)) return "#FF453A";
-  if (/✅|✓|\[OK\]|success|live at|🚀/i.test(line)) return "#30D158";
-  if (/🔧|auto-repair|💡/i.test(line)) return "#FF9F0A";
-  if (/\[DETECT\]|\[BUILD\]|\[INSTALL\]|🔍|📦|Cloning|Detecting/i.test(line)) return "#60A5FA";
+function timeAgo(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  const d = new Date(ts);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function logColor(line: string): string {
+  if (/error|failed|✗|❌/i.test(line)) return "#EF4444";
+  if (/✅|live at|success|deployed|complete/i.test(line)) return "#22C55E";
+  if (/warning|warn/i.test(line)) return "#F59E0B";
+  if (/cloning|detecting|installing|building|starting/i.test(line)) return "#60A5FA";
   return "#94A3B8";
 }
 
-function LiveLogPanel({ serverUrl, token }: { serverUrl: string; token: string }) {
+function jobToEvents(job: DeployJob): Event[] {
+  const events: Event[] = [];
+
+  if (job.status === "done" && job.result?.url) {
+    events.push({
+      id: `${job.id}-live`,
+      icon: "check-circle",
+      iconColor: "#16A34A",
+      iconBg: "#DCFCE7",
+      title: `Deploy live for ${job.slug ?? job.name}`,
+      sub: `Manually triggered · ${timeAgo(job.finishedAt ?? job.createdAt)}`,
+      ts: job.finishedAt ?? job.createdAt,
+      url: job.result.url,
+      logs: job.logs,
+    });
+  }
+
+  if (job.status === "failed") {
+    events.push({
+      id: `${job.id}-fail`,
+      icon: "x-circle",
+      iconColor: "#DC2626",
+      iconBg: "#FEE2E2",
+      title: `Deploy failed for ${job.slug ?? job.name}`,
+      sub: timeAgo(job.finishedAt ?? job.createdAt),
+      ts: job.finishedAt ?? job.createdAt,
+      error: job.error,
+      logs: job.logs,
+    });
+  }
+
+  if (job.status === "running" || job.status === "queued") {
+    events.push({
+      id: `${job.id}-running`,
+      icon: "upload-cloud",
+      iconColor: "#1D4ED8",
+      iconBg: "#DBEAFE",
+      title: `Deploy in progress: ${job.slug ?? job.name}`,
+      sub: `Started ${timeAgo(job.startedAt ?? job.createdAt)}`,
+      ts: job.startedAt ?? job.createdAt,
+      logs: job.logs,
+      isActive: true,
+    });
+  }
+
+  if (job.createdAt && job.status !== "queued") {
+    events.push({
+      id: `${job.id}-start`,
+      icon: "upload",
+      iconColor: "#6B7280",
+      iconBg: "#F3F4F6",
+      title: `Deploy started for ${job.slug ?? job.name}`,
+      sub: `Manually triggered via Dashboard · ${timeAgo(job.createdAt)}`,
+      ts: job.createdAt,
+    });
+  }
+
+  return events;
+}
+
+function EventCard({ ev, expanded, onToggle }: { ev: Event; expanded: boolean; onToggle: () => void }) {
   const colors = useColors();
-  const scrollRef = useRef<ScrollView>(null);
-  const [jobs, setJobs] = useState<ServerJob[]>([]);
-  const [selectedJob, setSelectedJob] = useState<ServerJob | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const fetchJobs = useCallback(async () => {
-    if (!serverUrl) return;
-    try {
-      const r = await fetch(`${serverUrl}/api/jobs`, {
-        headers: { "x-nezora-admin-token": token },
-      });
-      if (!r.ok) return;
-      const d = await r.json();
-      if (d.ok && Array.isArray(d.jobs)) {
-        setJobs(d.jobs.slice(0, 20));
-        setSelectedJob(prev => {
-          const updated = d.jobs.find((j: ServerJob) => j.id === prev?.id);
-          return updated ?? (d.jobs[0] ?? null);
-        });
-      }
-    } catch {}
-  }, [serverUrl, token]);
-
-  useEffect(() => {
-    fetchJobs();
-    pollingRef.current = setInterval(fetchJobs, 1000);
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, [fetchJobs]);
-
-  useEffect(() => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
-  }, [selectedJob?.logs?.length]);
-
-  if (!serverUrl) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }}>
-        <Feather name="server" size={36} color={colors.mutedForeground} />
-        <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 14, textAlign: "center" }}>
-          Set your server URL in Settings first.
-        </Text>
-      </View>
-    );
-  }
-
-  if (jobs.length === 0) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 }}>
-        <View style={{ width: 60, height: 60, borderRadius: 18, backgroundColor: "#1A2235", alignItems: "center", justifyContent: "center" }}>
-          <Feather name="activity" size={28} color="#3B82F6" />
-        </View>
-        <Text style={{ color: colors.foreground, fontFamily: "Inter_700Bold", fontSize: 17 }}>No deploys yet</Text>
-        <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 13, textAlign: "center", lineHeight: 20 }}>
-          Start a deploy from the Deploy tab. Logs stream here live, line by line.
-        </Text>
-        <Pressable onPress={fetchJobs} style={{ marginTop: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Feather name="refresh-cw" size={14} color={colors.primary} />
-          <Text style={{ color: colors.primary, fontFamily: "Inter_500Medium", fontSize: 13 }}>Refresh</Text>
-        </Pressable>
-      </View>
-    );
-  }
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Job selector */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 52 }} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 8 }}>
-        {jobs.map(j => (
-          <Pressable
-            key={j.id}
-            onPress={() => { setSelectedJob(j); Haptics.selectionAsync(); }}
-            style={({ pressed }) => ({
-              paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, opacity: pressed ? 0.7 : 1,
-              backgroundColor: selectedJob?.id === j.id ? (j.status === "failed" ? "#FF453A22" : j.status === "done" ? "#30D15822" : "#3B82F622") : colors.card,
-              borderWidth: 1.5,
-              borderColor: selectedJob?.id === j.id ? (j.status === "failed" ? "#FF453A" : j.status === "done" ? "#30D158" : "#3B82F6") : colors.border,
-              flexDirection: "row", alignItems: "center", gap: 6,
-            })}
-          >
-            {j.status === "running" || j.status === "queued" ? (
-              <ActivityIndicator size="small" color="#3B82F6" style={{ transform: [{ scale: 0.7 }] }} />
-            ) : (
-              <Feather
-                name={j.status === "done" ? "check-circle" : "x-circle"}
-                size={12}
-                color={j.status === "done" ? "#30D158" : "#FF453A"}
-              />
-            )}
-            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: selectedJob?.id === j.id ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
-              {j.name}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+    <Pressable onPress={onToggle} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
+      <View style={{ paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 14 }}>
+          {/* Icon */}
+          <View style={{
+            width: 38, height: 38, borderRadius: 19,
+            backgroundColor: ev.iconBg,
+            alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            {ev.isActive
+              ? <ActivityIndicator size="small" color={ev.iconColor} />
+              : <Feather name={ev.icon as any} size={18} color={ev.iconColor} />
+            }
+          </View>
 
-      {/* Log terminal */}
-      <View style={{ flex: 1, margin: 12, backgroundColor: "#060B14", borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: "#1A2235" }}>
-        {/* Terminal header */}
-        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#1A2235", gap: 8 }}>
-          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: selectedJob?.status === "failed" ? "#FF453A" : selectedJob?.status === "done" ? "#30D158" : "#FF9F0A" }} />
+          {/* Content */}
           <View style={{ flex: 1 }}>
-            <Text style={{ color: "#94A3B8", fontFamily: "Inter_500Medium", fontSize: 12 }} numberOfLines={1}>
-              {selectedJob?.name ?? "—"} · job:{selectedJob?.id?.slice(-8) ?? "—"}
+            <Text style={{ fontSize: 15, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold", marginBottom: 3 }}>
+              {ev.title}
             </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {(selectedJob?.status === "running" || selectedJob?.status === "queued") && (
-              <ActivityIndicator size="small" color="#3B82F6" />
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+              {ev.sub}
+            </Text>
+            {ev.url && !expanded && (
+              <Text style={{ fontSize: 12, color: "#7C3AED", fontFamily: "Inter_400Regular", marginTop: 4 }} numberOfLines={1}>
+                {ev.url}
+              </Text>
             )}
-            <Text style={{
-              fontSize: 11, fontFamily: "Inter_600SemiBold",
-              color: selectedJob?.status === "failed" ? "#FF453A" : selectedJob?.status === "done" ? "#30D158" : "#3B82F6",
-            }}>
-              {selectedJob?.status ?? "—"}
-            </Text>
           </View>
+
+          {(ev.logs?.length || ev.error || ev.url) ? (
+            <Feather name={expanded ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} style={{ marginTop: 4 }} />
+          ) : null}
         </View>
 
-        <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }} showsVerticalScrollIndicator={false}>
-          {(selectedJob?.logs ?? []).length === 0 ? (
-            <View style={{ alignItems: "center", paddingTop: 24, gap: 8 }}>
-              <ActivityIndicator size="small" color="#3B82F6" />
-              <Text style={{ color: "#475569", fontFamily: "Inter_400Regular", fontSize: 12 }}>Waiting for logs…</Text>
-            </View>
-          ) : (
-            (selectedJob?.logs ?? []).map((line, i) => (
-              <Text key={i} style={{ fontSize: 11.5, color: logColor(line), fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", lineHeight: 19 }}>
-                {line}
-              </Text>
-            ))
-          )}
-          {selectedJob?.status === "done" && selectedJob.result?.url && (
-            <View style={{ marginTop: 12, backgroundColor: "#0D3321", borderRadius: 8, padding: 10, borderWidth: 1, borderColor: "#30D15840" }}>
-              <Text style={{ color: "#30D158", fontFamily: "Inter_600SemiBold", fontSize: 12 }}>🚀 Live: {selectedJob.result.url}</Text>
-            </View>
-          )}
-          {selectedJob?.status === "failed" && selectedJob.error && (
-            <View style={{ marginTop: 12, backgroundColor: "#2D0A0A", borderRadius: 8, padding: 10, borderWidth: 1, borderColor: "#FF453A40" }}>
-              <Text style={{ color: "#FF453A", fontFamily: "Inter_500Medium", fontSize: 12 }}>✗ {selectedJob.error}</Text>
-            </View>
-          )}
-        </ScrollView>
+        {/* Expanded detail */}
+        {expanded && (
+          <View style={{ marginTop: 12, marginLeft: 52 }}>
+            {ev.url && (
+              <View style={{ backgroundColor: "#0D3321", borderRadius: 10, padding: 12, marginBottom: 8 }}>
+                <Text style={{ fontSize: 12, color: "#30D158", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>
+                  🚀 Live at {ev.url}
+                </Text>
+              </View>
+            )}
+            {ev.error && (
+              <View style={{ backgroundColor: "#2D0A0A", borderRadius: 10, padding: 12, marginBottom: 8 }}>
+                <Text style={{ fontSize: 12, color: "#EF4444", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>
+                  ✗ {ev.error}
+                </Text>
+              </View>
+            )}
+            {ev.logs && ev.logs.length > 0 && (
+              <View style={{ backgroundColor: "#060B14", borderRadius: 10, padding: 12, maxHeight: 240 }}>
+                <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                  {ev.logs.slice(-60).map((l, i) => (
+                    <Text
+                      key={i}
+                      style={{ fontSize: 11, color: logColor(l), fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", lineHeight: 18 }}
+                    >
+                      {l}
+                    </Text>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-export default function CodeScreen() {
+export default function EventsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { post } = useApi();
-  const { serverUrl, token } = useAuth();
+  const { get } = useApi();
+  const { serverUrl } = useAuth();
 
-  const [tab, setTab] = useState<"ai" | "logs">("ai");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const listRef = useRef<FlatList>(null);
+  const [jobs, setJobs] = useState<DeployJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const send = useCallback(async (text?: string) => {
-    const content = (text ?? input).trim();
-    if (!content || loading) return;
-    const userMsg: Message = { id: Date.now().toString(), role: "user", content, ts: Date.now() };
-    setMessages(prev => [...prev, userMsg]);
-    setInput("");
-    setLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+  const load = useCallback(async (manual = false) => {
+    if (manual) { setRefreshing(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }
     try {
-      const data = await post("/ai/chat", {
-        message: content,
-        history: messages.slice(-8).map(m => ({ role: m.role, content: m.content })),
-        systemContext: "You are a coding assistant and DevOps expert for Danny's Cloud platform. Help with code generation, deployment configs, Dockerfiles, and server management. When there are errors in deploys, suggest concrete fixes.",
-      });
-      const reply: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data?.reply ?? data?.response ?? data?.message ?? "Sorry, I couldn't process that.",
-        ts: Date.now(),
-      };
-      setMessages(prev => [...prev, reply]);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: "Couldn't reach the AI. Make sure the server URL is configured in Settings.",
-        ts: Date.now(),
-      }]);
-    } finally {
-      setLoading(false);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [input, loading, post, messages]);
+      const r = await get("/real/deploy-jobs");
+      if (r?.jobs) setJobs(r.jobs);
+    } catch {}
+    setLoading(false);
+    if (manual) setRefreshing(false);
+  }, [get]);
 
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isUser = item.role === "user";
-    return (
-      <View style={{ maxWidth: "85%", alignSelf: isUser ? "flex-end" : "flex-start", marginVertical: 4, marginHorizontal: 16 }}>
-        {!isUser && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 5 }}>
-            <LinearGradient colors={["#3B82F6", "#8B5CF6"]} style={{ width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" }}>
-              <Feather name="code" size={11} color="#fff" />
-            </LinearGradient>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>Cloud AI</Text>
-          </View>
-        )}
-        {isUser ? (
-          <LinearGradient colors={["#1D4ED8", "#7C3AED"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 18, borderBottomRightRadius: 4, paddingHorizontal: 14, paddingVertical: 10 }}>
-            <Text style={{ fontSize: 15, color: "#fff", fontFamily: "Inter_400Regular", lineHeight: 22 }}>{item.content}</Text>
-          </LinearGradient>
-        ) : (
-          <View style={{ backgroundColor: colors.card, borderRadius: 18, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 10 }}>
-            <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 22 }}>{item.content}</Text>
-          </View>
-        )}
-      </View>
-    );
-  };
+  useEffect(() => {
+    load();
+    pollRef.current = setInterval(load, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [load]);
+
+  // Build flat event list from jobs
+  const events: Event[] = jobs
+    .flatMap(j => jobToEvents(j as any))
+    .sort((a, b) => b.ts - a.ts);
+
+  const activeCount = jobs.filter(j => j.status === "running" || j.status === "queued").length;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
-      <LinearGradient
-        colors={["#0F1628", "#070B14"]}
-        style={{ paddingTop: insets.top + (Platform.OS === "web" ? 67 : 20), paddingHorizontal: 20, paddingBottom: 12 }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 }}>
-          <LinearGradient colors={["#8B5CF6", "#3B82F6"]} style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" }}>
-            <Feather name="code" size={20} color="#fff" />
-          </LinearGradient>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Code</Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>AI Assistant · Live Deploy Logs</Text>
+      <View style={{
+        paddingTop: insets.top + (Platform.OS === "web" ? 67 : 14),
+        paddingHorizontal: 20,
+        paddingBottom: 14,
+        backgroundColor: colors.background,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <View>
+            <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Events</Text>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+              Deploy history · live log streaming
+            </Text>
           </View>
-          {tab === "ai" && messages.length > 0 && (
-            <Pressable onPress={() => { setMessages([]); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 8 })}>
-              <Feather name="trash-2" size={18} color={colors.mutedForeground} />
-            </Pressable>
-          )}
-        </View>
-
-        {/* Tab switcher */}
-        <View style={{ flexDirection: "row", backgroundColor: "#111827", borderRadius: 12, padding: 3 }}>
-          {([["ai", "message-circle", "AI Chat"], ["logs", "activity", "Deploy Logs"]] as const).map(([key, icon, label]) => (
-            <Pressable
-              key={key}
-              onPress={() => { setTab(key); Haptics.selectionAsync(); }}
-              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, borderRadius: 10, backgroundColor: tab === key ? "#1E293B" : "transparent" }}
-            >
-              <Feather name={icon} size={14} color={tab === key ? "#fff" : colors.mutedForeground} />
-              <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: tab === key ? "#fff" : colors.mutedForeground }}>{label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </LinearGradient>
-
-      {/* AI Chat tab */}
-      {tab === "ai" && (
-        <>
-          {messages.length === 0 ? (
-            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 20 }}>
-              <LinearGradient colors={["#8B5CF6", "#3B82F6"]} style={{ width: 72, height: 72, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-                <Feather name="code" size={32} color="#fff" />
-              </LinearGradient>
-              <Text style={{ fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center", marginBottom: 8 }}>AI Coding Assistant</Text>
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", marginBottom: 24, lineHeight: 21 }}>
-                Ask me to write code, fix errors, generate Dockerfiles, or debug deploys.
-              </Text>
-              <View style={{ width: "100%", gap: 8 }}>
-                {SUGGESTIONS.map((s, i) => (
-                  <Pressable key={i} style={({ pressed }) => ({ backgroundColor: colors.card, borderRadius: 12, padding: 13, flexDirection: "row", alignItems: "center", gap: 10, opacity: pressed ? 0.7 : 1 })} onPress={() => send(s)}>
-                    <Feather name="terminal" size={14} color={colors.primary} />
-                    <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular" }}>{s}</Text>
-                  </Pressable>
-                ))}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            {activeCount > 0 && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: "#DBEAFE" }}>
+                <ActivityIndicator size="small" color="#1D4ED8" />
+                <Text style={{ fontSize: 12, color: "#1D4ED8", fontFamily: "Inter_600SemiBold" }}>{activeCount} live</Text>
               </View>
-            </View>
-          ) : (
-            <FlatList
-              ref={listRef}
-              data={messages}
-              keyExtractor={m => m.id}
-              renderItem={renderMessage}
-              contentContainerStyle={{ paddingTop: 12, paddingBottom: 16 }}
-              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-            />
-          )}
-
-          {loading && (
-            <View style={{ paddingHorizontal: 20, paddingBottom: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Thinking…</Text>
-            </View>
-          )}
-
-          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + (Platform.OS === "web" ? 84 : 16), backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.border }}>
-            <TextInput
-              style={{ flex: 1, backgroundColor: colors.card, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular", maxHeight: 120, borderWidth: 1, borderColor: colors.border }}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask me to write code…"
-              placeholderTextColor={colors.mutedForeground}
-              multiline
-              returnKeyType="send"
-              onSubmitEditing={() => send()}
-              editable={!loading}
-            />
-            <Pressable
-              style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.8 : 1 })}
-              onPress={() => send()}
-              disabled={!input.trim() || loading}
-            >
-              <LinearGradient
-                colors={input.trim() && !loading ? ["#3B82F6", "#8B5CF6"] : [colors.muted, colors.muted]}
-                style={{ width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" }}
-              >
-                <Feather name="arrow-up" size={20} color={input.trim() && !loading ? "#fff" : colors.mutedForeground} />
-              </LinearGradient>
+            )}
+            <Pressable onPress={() => load(true)} style={({ pressed }) => ({ opacity: pressed ? 0.4 : 1, padding: 6 })}>
+              <Feather name="refresh-cw" size={18} color={colors.mutedForeground} />
             </Pressable>
           </View>
-        </>
-      )}
+        </View>
+      </View>
 
-      {/* Deploy Logs tab */}
-      {tab === "logs" && (
-        <LiveLogPanel serverUrl={serverUrl} token={token} />
-      )}
-    </KeyboardAvoidingView>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {loading ? (
+          <View style={{ padding: 60, alignItems: "center", gap: 12 }}>
+            <ActivityIndicator size="large" color="#7C3AED" />
+            <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 13 }}>Loading events…</Text>
+          </View>
+        ) : !serverUrl ? (
+          <View style={{ padding: 40, alignItems: "center", gap: 10 }}>
+            <Feather name="activity" size={32} color={colors.mutedForeground} />
+            <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold", textAlign: "center" }}>No server connected</Text>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+              Set your Nezora server URL in Settings to see deploy events.
+            </Text>
+          </View>
+        ) : events.length === 0 ? (
+          <View style={{ padding: 40, alignItems: "center", gap: 10 }}>
+            <Feather name="inbox" size={32} color={colors.mutedForeground} />
+            <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold", textAlign: "center" }}>No events yet</Text>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+              Deploy a service to see events appear here.
+            </Text>
+          </View>
+        ) : (
+          events.map(ev => (
+            <EventCard
+              key={ev.id}
+              ev={ev}
+              expanded={expandedId === ev.id}
+              onToggle={() => {
+                setExpandedId(prev => prev === ev.id ? null : ev.id);
+                Haptics.selectionAsync();
+              }}
+            />
+          ))
+        )}
+
+        <View style={{ height: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 90 }} />
+      </ScrollView>
+    </View>
   );
 }

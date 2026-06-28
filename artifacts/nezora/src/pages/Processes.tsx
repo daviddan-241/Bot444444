@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useLocation } from 'wouter';
 import { Shell } from '@/components/Shell';
 import {
   Activity, RotateCw, Square, Terminal, ExternalLink, Zap,
-  AlertTriangle, CheckCircle2, Loader2, Wifi, WifiOff, RefreshCw
+  AlertTriangle, CheckCircle2, Loader2, Wifi, WifiOff, RefreshCw, Code2
 } from 'lucide-react';
 
 const BASE = () => import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -49,6 +50,7 @@ function duration(start?: number, end?: number) {
 
 export default function Processes() {
   const base = BASE();
+  const [, navigate] = useLocation();
   const [procs, setProcs] = useState<ManagedProcess[]>([]);
   const [jobs, setJobs] = useState<DeployJob[]>([]);
   const [workers, setWorkers] = useState<WorkerStatus[]>([]);
@@ -210,6 +212,11 @@ export default function Processes() {
                   {proc.url && (
                     <a href={proc.url} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm"><ExternalLink size={13} /></a>
                   )}
+                  <button className="btn btn-secondary btn-sm" title="Open Workspace (files + AI agent + terminal)"
+                    style={{ background: '#8B5CF610', color: '#8B5CF6', border: '1px solid #8B5CF630' }}
+                    onClick={() => navigate(`/workspace/${proc.id}`)}>
+                    <Code2 size={13} /> Workspace
+                  </button>
                   <button className="btn btn-secondary btn-sm" title={expandedId === proc.id ? 'Close logs' : 'Stream logs'}
                     style={{ background: expandedId === proc.id ? '#007AFF10' : undefined, color: expandedId === proc.id ? '#007AFF' : undefined }}
                     onClick={() => expandedId === proc.id ? closeLogs() : openLogs(proc.id)}>

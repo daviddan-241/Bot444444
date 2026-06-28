@@ -1,3 +1,4 @@
 - [Vite proxy is essential](vite-proxy.md) — without it, all frontend API calls 404 against Vite dev server instead of Express at port 8080.
 - [Auth open mode](auth-open-mode.md) — ADMIN_TOKEN not set = fully open; all assertAdmin() calls return true. Login page only appears when ADMIN_TOKEN is set.
 - [Deploy URL chain](deploy-url-chain.md) — deployed app URLs use getPublicUrl() → REPLIT_DOMAINS env var → `https://domain.replit.dev/app/slug/`; accessible via Vite proxy → Express → spawned process port.
+- [Workspace agent](workspace-agent.md) — per-project AI coding agent at /api/real/workspaces/:slug/agent; uses ReAct tool loop (list_files/read_file/write_file/run_command/get_logs); scoped to .nezora-apps/:slug dir.

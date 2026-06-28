@@ -17,6 +17,7 @@ import processesRouter from "./processes";
 import githubRouter from "./github";
 import jobsRouter from "./jobs";
 import sitesRouter from "./sites";
+import workspaceRouter from "./workspace";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(shellRouter);
 router.use(githubRouter);
 router.use(jobsRouter);
 router.use(sitesRouter);
+router.use(workspaceRouter);
 
 export default router;

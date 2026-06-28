@@ -24,6 +24,7 @@ import Domains from "@/pages/Domains";
 import Databases from "@/pages/Databases";
 import Storage from "@/pages/Storage";
 import Automation from "@/pages/Automation";
+import Workspace from "@/pages/Workspace";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -80,6 +81,7 @@ function AuthRouter() {
       <Route path="/automation" component={Automation} />
       <Route path="/sites" component={Sites} />
       <Route path="/processes" component={Processes} />
+      <Route path="/workspace/:slug" component={Workspace} />
       <Route component={NotFound} />
     </Switch>
   );

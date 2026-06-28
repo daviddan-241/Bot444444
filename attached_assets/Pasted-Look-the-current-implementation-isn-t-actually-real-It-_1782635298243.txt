@@ -1,0 +1,27 @@
+Look, the current implementation isn't actually real. It isn't hosting or deploying projects the way I need it to. I want this to function like a real cloud deployment platform, not a simulation.
+
+When I upload a ZIP, TAR, Git repository, or any supported project, it should automatically create a real isolated workspace for that project. That workspace should include a background AI agent (or multiple agents) that continuously works on the project through the chat, just like a real coding assistant. The agents should be able to inspect the codebase, make changes, run commands, install dependencies, fix errors, build, test, redeploy, and continue working until the requested task is completed.
+
+Study the Render screenshots so you understand how Render's deployment flow, services, logs, builds, and workspaces operate. Then recreate that workflow with real functionality instead of placeholders.
+
+Everything must be connected to actual services:
+- Real repository cloning.
+- Real workspace creation.
+- Real terminal execution.
+- Real file system access.
+- Real package installation.
+- Real build process.
+- Real deployment.
+- Real logs.
+- Real status updates.
+- Real background workers.
+- Real networking.
+- Real persistent storage.
+- Real environment variables.
+- Real deployment URLs.
+
+This should be a completely standalone platform. Every workspace should behave like its own VM or cloud development environment, capable of handling large and resource-intensive projects just like a proper cloud server.
+
+The application itself will be hosted on Render, but Render should only act as the always-on entry point (keep-alive/web service). All deployment, workspace management, agent execution, and project handling should be real and fully functional.
+
+Remove every mocked feature, fake response, placeholder, or simulated deployment. Replace everything with real implementations, connect all services together, ensure every feature actually works end-to-end, then push the completed changes to the repository using the Git token provided.

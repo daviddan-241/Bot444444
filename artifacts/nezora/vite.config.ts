@@ -12,6 +12,10 @@ const rawPort = process.env.PORT ?? "3000";
 const port = Number(rawPort);
 const basePath = process.env.BASE_PATH ?? "/";
 
+// API server lives on 8080 by default; override with VITE_API_PORT or API_PORT
+const apiPort = process.env.VITE_API_PORT ?? process.env.API_PORT ?? "8080";
+const apiTarget = `http://localhost:${apiPort}`;
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -55,6 +59,33 @@ export default defineConfig({
     allowedHosts: true,
     fs: {
       strict: true,
+    },
+    proxy: {
+      // Forward all API calls to the Express backend
+      "/api": {
+        target: apiTarget,
+        changeOrigin: true,
+        // SSE / streaming — disable response buffering
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes) => {
+            const ct = proxyRes.headers["content-type"] ?? "";
+            if (ct.includes("text/event-stream")) {
+              proxyRes.headers["cache-control"] = "no-cache";
+            }
+          });
+        },
+      },
+      // Forward deployed-app requests to the backend proxy
+      "/app": {
+        target: apiTarget,
+        changeOrigin: true,
+        ws: true,
+      },
+      // Forward static-site requests to the backend
+      "/s": {
+        target: apiTarget,
+        changeOrigin: true,
+      },
     },
   },
   preview: {

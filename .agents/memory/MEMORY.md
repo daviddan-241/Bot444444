@@ -1,0 +1,3 @@
+- [Vite proxy is essential](vite-proxy.md) — without it, all frontend API calls 404 against Vite dev server instead of Express at port 8080.
+- [Auth open mode](auth-open-mode.md) — ADMIN_TOKEN not set = fully open; all assertAdmin() calls return true. Login page only appears when ADMIN_TOKEN is set.
+- [Deploy URL chain](deploy-url-chain.md) — deployed app URLs use getPublicUrl() → REPLIT_DOMAINS env var → `https://domain.replit.dev/app/slug/`; accessible via Vite proxy → Express → spawned process port.
